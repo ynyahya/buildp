@@ -3,961 +3,913 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>ATK Request Form - BPS South Jakarta</title>
-
-  <!-- base untuk GH Pages subpath -->
-  <base href="/buildp/">
-
-  <!-- Tailwind -->
+  <title>Form Permintaan ATK - BPS</title>
   <script src="https://cdn.tailwindcss.com"></script>
 
-  <!-- SheetJS for .xlsx export -->
-  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-
-  <!-- Signature Pad (UMD) -->
+  <!-- SignaturePad (UMD build) -->
   <script src="https://cdn.jsdelivr.net/npm/signature_pad@4.0.0/dist/signature_pad.umd.min.js"></script>
-
-  <!-- Safe local data adapter (load BEFORE main script) -->
-  <script src="dataAdapter-google-sheets.js"></script>
 
   <style>
     body { box-sizing: border-box; }
-    .toast{position:fixed;top:20px;right:20px;background:#10b981;color:#fff;padding:12px 18px;border-radius:8px;z-index:1000}
-    .toast.error{background:#ef4444}
-    .modal-backdrop{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:999}
-    .modal-content{background:#fff;border-radius:12px;padding:24px;max-width:600px;width:92%}
-    .digital-signature{border:2px solid #10b981;background:#f0fdf4;padding:16px;border-radius:8px;font-family:'Courier New',monospace}
-    .signature-canvas { border:1px dashed #cbd5e1; border-radius:6px; background:white; }
-    @media print { .no-print{display:none!important} }
+    .toast { position: fixed; top: 20px; right: 20px; background: #10b981; color: white; padding: 12px 18px; border-radius: 8px; z-index: 1200; box-shadow: 0 6px 18px rgba(0,0,0,0.08); }
+    .toast.error { background: #ef4444; }
+    .print-section { page-break-inside: avoid; }
+    @media print {
+      .no-print { display: none !important; }
+      body { background: white !important; margin: 0; padding: 12px; }
+    }
+    .signature-card { border: 1px dashed #c7d2fe; border-radius: 8px; padding: 8px; background: #fafafa; }
+    canvas.signature-canvas { width: 100%; height: 200px; touch-action: none; border-radius: 6px; background: white; border: 1px solid #e5e7eb; }
   </style>
 </head>
-<body class="bg-gray-50 min-h-full">
-  <div id="app" class="max-w-6xl mx-auto p-4 md:p-8"></div>
+<body class="bg-gray-50 min-h-screen text-gray-800">
 
-  <script>
-  // ---------- App (full, with Signature Pad) ----------
-  document.addEventListener('DOMContentLoaded', () => {
-    const defaultConfig = {
-      form_title: "Form Permintaan ATK",
-      budget_year: (new Date()).getFullYear().toString(),
-      organization_name: "BPS Kota Jakarta Selatan",
-      logo_url: "https://upload.wikimedia.org/wikipedia/commons/thumb/2/28/Lambang_Badan_Pusat_Statistik_%28BPS%29_Indonesia.svg/1160px-Lambang_Badan_Pusat_Statistik_%28BPS%29_Indonesia.svg.png",
-      doc_number_format: "0001",
-      whatsapp_number: "",
-      submit_button_text: "Kirim Permintaan"
-    };
+  <div id="app" class="max-w-6xl mx-auto p-6">
 
-    // State
-    let appSettings = null;
-    let currentRequests = [];
-    let currentView = 'form';
-    let editingRequestId = null;
+    <!-- Top Menu -->
+    <div class="no-print flex gap-3 mb-6">
+      <button id="btnNew" class="px-4 py-2 bg-blue-600 text-white rounded shadow-sm">📝 Permintaan Baru</button>
+      <button id="btnAll" class="px-4 py-2 bg-gray-700 text-white rounded shadow-sm">📋 Semua Permintaan</button>
+      <button id="btnVerifier" class="px-4 py-2 bg-orange-600 text-white rounded shadow-sm">✅ Verifikator</button>
+      <button id="btnSupervisor" class="px-4 py-2 bg-purple-600 text-white rounded shadow-sm">👔 Penanggung Jawab</button>
+      <button id="btnSettings" class="px-4 py-2 bg-gray-800 text-white rounded shadow-sm">⚙️ Pengaturan</button>
+      <button id="btnExportAll" class="ml-auto px-4 py-2 bg-indigo-700 text-white rounded shadow-sm">📤 Export Excel</button>
+    </div>
 
-    // Local signature data for current form (transient)
-    let requesterSignatureDataUrl = null;
-    let verifierSignatureDataUrl = null;
-    let supervisorSignatureDataUrl = null;
-
-    // SignaturePad instances
-    let requesterSigPad = null;
-    let verifierSigPad = null;
-    let supervisorSigPad = null;
-
-    // Helpers
-    function showToast(msg, isError=false){
-      const t=document.createElement('div'); t.className='toast' + (isError? ' error':''); t.textContent=msg; document.body.appendChild(t);
-      setTimeout(()=>t.remove(),3500);
-    }
-    function escapeHtml(s){ if(!s) return ''; return String(s).replace(/[&<>"']/g, (m)=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[m]); }
-    function formatDate(dateString){ if(!dateString) return '-'; const d=new Date(dateString); const months=['January','February','March','April','May','June','July','August','September','October','November','December']; return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`; }
-    function formatTimestamp(iso){ if(!iso) return '-'; const d=new Date(iso); return d.toLocaleString('en-US',{year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}); }
-
-    function ensureDataSdk(){ return window.dataSdk || null; }
-
-    // Render app skeleton
-    const app = document.getElementById('app');
-    app.innerHTML = `
-      <div class="no-print mb-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
-        <button id="newRequestBtn" class="px-4 py-3 bg-blue-600 text-white rounded-lg">📝 Permintaan Baru</button>
-        <button id="viewRequestsBtn" class="px-4 py-3 bg-gray-600 text-white rounded-lg">📋 Semua Permintaan</button>
-        <button id="verifierViewBtn" class="px-4 py-3 bg-orange-600 text-white rounded-lg">✅ Verifikator</button>
-        <button id="supervisorViewBtn" class="px-4 py-3 bg-purple-600 text-white rounded-lg">👔 Penanggung Jawab</button>
-        <button id="settingsBtn" class="px-4 py-3 bg-gray-700 text-white rounded-lg">⚙️ Pengaturan</button>
-        <button id="exportExcelBtnTop" class="px-4 py-3 bg-indigo-600 text-white rounded-lg">📥 Export Excel</button>
+    <!-- Main Views -->
+    <div id="viewForm" class="bg-white rounded shadow p-6 print-section">
+      <div class="text-center mb-6">
+        <h1 id="uiFormTitle" class="text-2xl font-bold">Form Permintaan ATK</h1>
+        <p id="uiBudgetYear" class="text-sm text-gray-600">Tahun Anggaran 2025</p>
+        <p id="uiOrg" class="text-sm text-gray-500">BPS Kota Jakarta Selatan</p>
       </div>
 
-      <div id="requestFormView" class="bg-white rounded-lg shadow-lg p-6 md:p-8 print-section"></div>
-
-      <div id="allRequestsView" class="hidden">
-        <div class="bg-white rounded-lg shadow-lg p-6">
-          <div class="flex items-center justify-between mb-4">
-            <h2 class="text-2xl font-bold">Semua Permintaan ATK</h2>
-            <div class="flex gap-2 items-center">
-              <label class="text-sm">Bulan</label>
-              <select id="filterMonth" class="px-2 py-2 border rounded"></select>
-              <label class="text-sm">Tahun</label>
-              <select id="filterYear" class="px-2 py-2 border rounded"></select>
-              <button id="exportFilteredBtn" class="px-4 py-2 bg-indigo-600 text-white rounded-lg">📥 Export Excel</button>
-            </div>
-          </div>
-          <div id="allRequestsList" class="space-y-4 mt-4"></div>
-        </div>
-      </div>
-
-      <div id="verifierView" class="hidden"><div class="bg-white rounded-lg shadow-lg p-6"><h2 class="text-2xl font-bold">Dashboard Verifikator</h2><div id="verifierRequestsList" class="space-y-4 mt-4"></div></div></div>
-      <div id="supervisorView" class="hidden"><div class="bg-white rounded-lg shadow-lg p-6"><h2 class="text-2xl font-bold">Dashboard Penanggung Jawab</h2><div id="supervisorRequestsList" class="space-y-4 mt-4"></div></div></div>
-
-      <div id="requestDetailView" class="hidden bg-white rounded-lg shadow-lg p-6 md:p-8 print-section"></div>
-
-      <div id="settingsView" class="hidden bg-white rounded-lg shadow-lg p-6 md:p-8"></div>
-    `;
-
-    // ---------- Render form with requester signature pad ----------
-    function renderFormView(){
-      const s = getCurrentSettings();
-      const v = document.getElementById('requestFormView');
-      v.innerHTML = `
-        <div class="mb-8 border-b-2 border-gray-800 pb-6">
-          <div class="flex items-center justify-center gap-6">
-            <div class="flex-shrink-0 logo-container">${getLogoHTML(s.logo_url)}</div>
-            <div class="text-center flex-grow">
-              <h1 id="formTitle" class="text-3xl font-bold text-gray-800 mb-2">${escapeHtml(s.form_title)}</h1>
-              <p id="budgetYear" class="text-gray-700 text-lg mb-1">Tahun Anggaran ${escapeHtml(s.budget_year)}</p>
-              <p id="organizationName" class="text-gray-600">${escapeHtml(s.organization_name)}</p>
-            </div>
-            <div class="flex-shrink-0 w-20"></div>
-          </div>
-        </div>
-
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-          <div><label class="block text-sm font-semibold">No Dokumen</label><input id="documentNumber" readonly class="w-full px-4 py-2 border rounded bg-gray-100"></div>
-          <div><label class="block text-sm font-semibold">Tahun</label><select id="yearSelect" class="w-full px-4 py-2 border rounded"></select></div>
-          <div><label class="block text-sm font-semibold">Bagian/Fungsi</label><select id="workUnitSelect" class="w-full px-4 py-2 border rounded"><option value=''>Pilih Bagian/Fungsi</option><option value='Subbagian Umum'>Subbagian Umum</option></select></div>
-        </div>
-
-        <div class="mb-6">
-          <div class="flex justify-between items-center mb-4">
-            <h2 class="text-xl font-bold">Rincian ATK</h2>
-            <button id="addRowBtn" class="no-print px-4 py-2 bg-green-600 text-white rounded-lg">+ Tambah Item</button>
-          </div>
-          <div class="overflow-x-auto">
-            <table class="w-full border-collapse border border-gray-300">
-              <thead><tr class="bg-gray-100"><th class="px-4 py-3 w-12">No</th><th class="px-4 py-3">Nama Item</th><th class="px-4 py-3 w-32">Jumlah</th><th class="px-4 py-3">Satuan</th><th class="px-4 py-3 w-24 no-print">Aksi</th></tr></thead>
-              <tbody id="itemsTableBody"></tbody>
-            </table>
-          </div>
-        </div>
-
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-          <div><label class="block text-sm font-semibold">Lokasi Pengajuan</label><input id="submissionLocation" class="w-full px-4 py-2 border rounded" value="Jakarta"></div>
-          <div><label class="block text-sm font-semibold">Tanggal Pengajuan</label><input id="submissionDate" type="date" class="w-full px-4 py-2 border rounded"></div>
-        </div>
-
-        <div class="border-t-2 border-gray-200 pt-6 mb-6">
-          <h2 class="text-xl font-bold mb-4">Informasi Pemohon</h2>
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-            <div><label class="block text-sm font-semibold">Nama</label><input id="requesterName" class="w-full px-4 py-2 border rounded"></div>
-            <div><label class="block text-sm font-semibold">NIP</label><input id="requesterNIP" class="w-full px-4 py-2 border rounded" placeholder="contoh: 199012345678901234"></div>
-          </div>
-
-          <div class="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-            <p class="text-sm text-blue-800"><strong>ℹ️ Tanda Tangan Digital:</strong> Permintaan Anda akan ditandatangani secara digital.</p>
-          </div>
-
-          <!-- Signature pad area for requester -->
-          <div class="mb-4">
-            <label class="block text-sm font-semibold mb-2">Tanda Tangan Pemohon (gunakan mouse / touch)</label>
-            <div class="mb-2">
-              <canvas id="requesterSignatureCanvas" class="signature-canvas w-full" style="height:160px;"></canvas>
-            </div>
-            <div class="flex gap-2 mb-4">
-              <button id="requesterClearBtn" class="px-3 py-2 bg-gray-500 text-white rounded">Clear</button>
-              <button id="requesterSaveBtn" class="px-3 py-2 bg-green-600 text-white rounded">Save Signature</button>
-              <div id="requesterSigPreview" class="ml-4"></div>
-            </div>
-            <input type="hidden" id="requesterSignatureInput" />
-          </div>
-
-          <button id="submitRequestBtn" class="no-print w-full px-6 py-3 bg-blue-600 text-white rounded-lg font-bold text-lg">${escapeHtml(defaultConfig.submit_button_text)}</button>
-        </div>
-      `;
-      initYearDropdown();
-      initSubmissionDate();
-      updateDocumentNumber();
-      addItemRow();
-      // signature init after elements exist
-      initRequesterSignaturePad();
-
-      document.getElementById('addRowBtn').addEventListener('click', addItemRow);
-      document.getElementById('submitRequestBtn').addEventListener('click', submitRequest);
-    }
-
-    // Signature pad helpers (requester)
-    function initRequesterSignaturePad(){
-      const canvas = document.getElementById('requesterSignatureCanvas');
-      if(!canvas) return;
-      // resize canvas for high DPI
-      fitToContainer(canvas);
-      requesterSigPad = new SignaturePad(canvas, { penColor: "rgb(22, 78, 99)" });
-      // load existing preview if any (not persisted between sessions unless saved in record)
-      document.getElementById('requesterClearBtn').addEventListener('click', ()=> { requesterSigPad.clear(); document.getElementById('requesterSignatureInput').value = ''; requesterSigPreviewClear(); requesterSignatureDataUrl = null; });
-      document.getElementById('requesterSaveBtn').addEventListener('click', ()=> {
-        if(requesterSigPad.isEmpty()){ showToast('Tandatangan kosong — silakan tanda tangan terlebih dahulu', true); return; }
-        const dataUrl = requesterSigPad.toDataURL('image/png');
-        document.getElementById('requesterSignatureInput').value = dataUrl;
-        requesterSignatureDataUrl = dataUrl;
-        renderRequesterSigPreview(dataUrl);
-        showToast('Signature saved (preview shown)');
-      });
-    }
-    function renderRequesterSigPreview(dataUrl){
-      const container = document.getElementById('requesterSigPreview');
-      if(!container) return;
-      container.innerHTML = `<img src="${dataUrl}" alt="signature" style="max-height:80px;border:1px solid #e5e7eb;padding:4px;border-radius:4px;background:white">`;
-    }
-    function requesterSigPreviewClear(){ const c=document.getElementById('requesterSigPreview'); if(c) c.innerHTML=''; }
-
-    // Utility to fit canvas to its container devicePixelRatio-aware
-    function fitToContainer(canvas){
-      const ratio = Math.max(window.devicePixelRatio || 1, 1);
-      const w = canvas.clientWidth;
-      // set height if specified inline style
-      let h = parseInt(canvas.style.height) || canvas.clientHeight || 160;
-      canvas.width = w * ratio;
-      canvas.height = h * ratio;
-      canvas.getContext('2d').scale(ratio, ratio);
-    }
-
-    // Form helpers (items)
-    function initYearDropdown(){
-      const sel=document.getElementById('yearSelect'); if(!sel) return;
-      sel.innerHTML=''; const currentYear=(new Date()).getFullYear();
-      for(let i=currentYear-5;i<=currentYear+5;i++){ const o=document.createElement('option'); o.value=i; o.textContent=i; if(i===currentYear) o.selected=true; sel.appendChild(o); }
-    }
-    function initSubmissionDate(){ const d=document.getElementById('submissionDate'); if(d) d.value=(new Date()).toISOString().split('T')[0]; }
-    function addItemRow(){ const tbody=document.getElementById('itemsTableBody'); if(!tbody) return; const row=document.createElement('tr'); const idx=tbody.children.length+1; row.innerHTML=`
-      <td class="border px-4 py-2 text-center">${idx}</td>
-      <td class="border px-4 py-2"><input type="text" class="item-name w-full px-2 py-1 border rounded" placeholder="Masukkan nama item"></td>
-      <td class="border px-4 py-2"><input type="number" class="item-quantity w-full px-2 py-1 border rounded" min="1" value="1"></td>
-      <td class="border px-4 py-2"><input type="text" class="item-notes w-full px-2 py-1 border rounded" placeholder="Satuan (contoh: pcs)"></td>
-      <td class="border px-4 py-2 text-center no-print"><button class="delete-row-btn px-3 py-1 bg-red-500 text-white rounded">Hapus</button></td>
-    `; tbody.appendChild(row); row.querySelector('.delete-row-btn').addEventListener('click', ()=>{ row.remove(); updateRowNumbers(); }); }
-    function updateRowNumbers(){ const tbody=document.getElementById('itemsTableBody'); Array.from(tbody.children).forEach((r,i)=> r.children[0].textContent=i+1); }
-    function getItemsFromTable(){ const tbody=document.getElementById('itemsTableBody'); const items=[]; Array.from(tbody.children).forEach(row=>{ const name=row.querySelector('.item-name').value.trim(); const qty=parseInt(row.querySelector('.item-quantity').value)||0; const notes=row.querySelector('.item-notes').value.trim(); if(name && qty>0) items.push({name,quantity:qty,notes}); }); return items; }
-
-    // Document number
-    function updateDocumentNumber(){ const el=document.getElementById('documentNumber'); if(el) el.value=generateDocumentNumber(); }
-    function generateDocumentNumber(){
-      const year=document.getElementById('yearSelect')?document.getElementById('yearSelect').value: (new Date()).getFullYear();
-      const submissionDate=document.getElementById('submissionDate')?document.getElementById('submissionDate').value:'';
-      const settings = getCurrentSettings();
-      const prefix = settings.doc_number_format || defaultConfig.doc_number_format;
-      let month='01';
-      if(submissionDate){ const d=new Date(submissionDate); month=(d.getMonth()+1).toString().padStart(2,'0'); }
-      const existingNumbers = (currentRequests||[]).filter(r=>r.recordType==='request').filter(r=>{ const parts=(r.documentNumber||'').split('/'); return parts.length===4 && parts[2]===month && parts[3]===year; }).map(r=>{ const parts=(r.documentNumber||'').split('/'); return parseInt(parts[0])||0; });
-      const nextNumber = existingNumbers.length>0? Math.max(...existingNumbers)+1 : parseInt(prefix)||1;
-      const padded = nextNumber.toString().padStart(4,'0');
-      return `${padded}/ATK/${month}/${year}`;
-    }
-
-    // Validate + submit (include requester signature)
-    function validateForm(){
-      const year=document.getElementById('yearSelect')?document.getElementById('yearSelect').value:''; const workUnit=document.getElementById('workUnitSelect')?document.getElementById('workUnitSelect').value:''; const items=getItemsFromTable(); const requesterName=document.getElementById('requesterName')?document.getElementById('requesterName').value.trim():''; const requesterNIP=document.getElementById('requesterNIP')?document.getElementById('requesterNIP').value.trim():'';
-      if(!year){ showToast('Mohon pilih tahun', true); return false; } if(!workUnit){ showToast('Mohon pilih bagian/fungsi', true); return false; } if(items.length===0){ showToast('Mohon tambahkan minimal satu item', true); return false; } if(!requesterName){ showToast('Mohon isi nama pemohon', true); return false; } if(!requesterNIP){ showToast('Mohon isi NIP pemohon', true); return false; } return true;
-    }
-
-    async function submitRequest(){
-      if(!validateForm()) return;
-      const btn=document.getElementById('submitRequestBtn'); if(btn){ btn.disabled=true; btn.textContent='Mengirim...'; }
-      try{
-        // If user hasn't saved signature yet but drew it, auto-save
-        if(requesterSigPad && !requesterSignatureDataUrl && !requesterSigPad.isEmpty()){
-          requesterSignatureDataUrl = requesterSigPad.toDataURL('image/png');
-          document.getElementById('requesterSignatureInput').value = requesterSignatureDataUrl;
-        }
-
-        const documentNumber = generateDocumentNumber();
-        const year=document.getElementById('yearSelect').value;
-        const workUnit=document.getElementById('workUnitSelect').value;
-        const items=getItemsFromTable();
-        const submissionDate=document.getElementById('submissionDate').value;
-        const submissionLocation=document.getElementById('submissionLocation').value.trim();
-        const requesterName=document.getElementById('requesterName').value.trim();
-        const requesterNIP=document.getElementById('requesterNIP').value.trim();
-
-        const record = {
-          recordType: 'request',
-          documentNumber,
-          year,
-          workUnit,
-          items: JSON.stringify(items),
-          submissionDate,
-          submissionLocation,
-          requesterName,
-          requesterNIP,
-          status: 'Pending Verification',
-          verifierName: '',
-          verifierNIP: '',
-          verificationDate: '',
-          supervisorName: '',
-          supervisorNIP: '',
-          supervisorApprovalDate: '',
-          rejectionReason: '',
-          rejectedBy: '',
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          signatureRequester: requesterSignatureDataUrl || ''
-        };
-
-        const sdk = ensureDataSdk();
-        if(sdk && sdk.create){
-          const res = await sdk.create(record);
-          if(res && res.isOk){
-            showToast('Permintaan berhasil dikirim dan tersimpan!');
-            resetForm();
-            renderVerifierDashboard();
-          } else {
-            record.__backendId = 'local-'+Math.random().toString(36).slice(2,9);
-            currentRequests.push(record);
-            saveLocalRequests();
-            renderVerifierDashboard();
-            showToast('Disimpan lokal (adapter tidak terhubung)');
-            resetForm();
-          }
-        } else {
-          record.__backendId = 'local-'+Math.random().toString(36).slice(2,9);
-          currentRequests.push(record);
-          saveLocalRequests();
-          renderVerifierDashboard();
-          showToast('Disimpan lokal (SDK tidak tersedia).');
-          resetForm();
-        }
-      }catch(e){ console.error(e); showToast('Gagal mengirim: '+e.message,true); }
-      finally{ if(btn){ btn.disabled=false; btn.textContent=getCurrentSettings().submit_button_text; } }
-    }
-
-    function resetForm(){ if(document.getElementById('workUnitSelect')) document.getElementById('workUnitSelect').value=''; if(document.getElementById('itemsTableBody')) document.getElementById('itemsTableBody').innerHTML=''; if(document.getElementById('requesterName')) document.getElementById('requesterName').value=''; if(document.getElementById('requesterNIP')) document.getElementById('requesterNIP').value=''; initSubmissionDate(); updateDocumentNumber(); addItemRow(); // clear signature
-      if(requesterSigPad){ requesterSigPad.clear(); requesterSignatureDataUrl = null; requesterSigPreviewClear(); document.getElementById('requesterSignatureInput').value=''; }
-    }
-
-    // ---------- Settings (no Google fields) ----------
-    function getCurrentSettings(){
-      if(appSettings) return {
-        form_title: appSettings.form_title || defaultConfig.form_title,
-        budget_year: appSettings.budget_year || defaultConfig.budget_year,
-        organization_name: appSettings.organization_name || defaultConfig.organization_name,
-        doc_number_format: appSettings.doc_number_format || defaultConfig.doc_number_format,
-        logo_url: appSettings.logo_url || defaultConfig.logo_url,
-        whatsapp_number: appSettings.whatsapp_number || defaultConfig.whatsapp_number,
-        submit_button_text: appSettings.submit_button_text || defaultConfig.submit_button_text
-      };
-      return {
-        form_title: localStorage.getItem('atk_form_title') || defaultConfig.form_title,
-        budget_year: localStorage.getItem('atk_budget_year') || defaultConfig.budget_year,
-        organization_name: localStorage.getItem('atk_org') || defaultConfig.organization_name,
-        doc_number_format: localStorage.getItem('atk_doc_prefix') || defaultConfig.doc_number_format,
-        logo_url: localStorage.getItem('atk_logo') || defaultConfig.logo_url,
-        whatsapp_number: localStorage.getItem('atk_whatsapp_number') || defaultConfig.whatsapp_number,
-        submit_button_text: defaultConfig.submit_button_text
-      };
-    }
-
-    function applySettingsToUI(){
-      const s=getCurrentSettings();
-      document.querySelectorAll('.logo-container').forEach(el => el.innerHTML = getLogoHTML(s.logo_url));
-      const submitBtn = document.getElementById('submitRequestBtn'); if(submitBtn) submitBtn.textContent = s.submit_button_text;
-    }
-
-    function getLogoHTML(logoUrl){
-      if(logoUrl && logoUrl.trim()!=='') return `<img src="${escapeHtml(logoUrl)}" alt="Logo" class="w-20 h-20 object-contain" onerror="this.style.display='none'">`;
-      return `<svg width="80" height="80" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><path d="M50 5 L85 20 L85 50 Q85 75 50 95 Q15 75 15 50 L15 20 Z" fill="#1e40af"/><path d="M50 15 L75 25 L75 50 Q75 70 50 85 Q25 70 25 50 L25 25 Z" fill="#3b82f6"/><text x="50" y="45" font-family="Arial" font-size="16" font-weight="bold" fill="white" text-anchor="middle">BPS</text></svg>`;
-    }
-
-    function loadSettingsForm(){
-      const s=getCurrentSettings();
-      const v=document.getElementById('settingsView');
-      v.innerHTML = `
-        <h2 class="text-2xl font-bold mb-4">Settings / Pengaturan</h2>
-        <div class="mb-4"><label class="block text-sm font-semibold mb-1">Form Title</label><input id="settingFormTitle" class="w-full px-3 py-2 border rounded" value="${escapeHtml(s.form_title)}"></div>
-        <div class="mb-4"><label class="block text-sm font-semibold mb-1">Budget Year</label><input id="settingBudgetYear" class="w-full px-3 py-2 border rounded" value="${escapeHtml(s.budget_year)}"></div>
-        <div class="mb-4"><label class="block text-sm font-semibold mb-1">Organization Name</label><input id="settingOrganizationName" class="w-full px-3 py-2 border rounded" value="${escapeHtml(s.organization_name)}"></div>
-        <div class="mb-4"><label class="block text-sm font-semibold mb-1">Document Number Prefix</label><input id="settingDocNumberFormat" class="w-full px-3 py-2 border rounded" value="${escapeHtml(localStorage.getItem('atk_doc_prefix') || s.doc_number_format)}"><p class="text-xs text-gray-500 mt-1">Format: 0001 -> 0001/ATK/MM/YYYY</p></div>
-        <div class="mb-4"><label class="block text-sm font-semibold mb-1">Logo URL</label><input id="settingLogoUrl" class="w-full px-3 py-2 border rounded" value="${escapeHtml(s.logo_url)}"></div>
-        <div class="mb-4"><label class="block text-sm font-semibold mb-1">WhatsApp Number (contoh: 628123...)</label><input id="settingWhatsAppNumber" class="w-full px-3 py-2 border rounded" value="${escapeHtml(localStorage.getItem('atk_whatsapp_number') || s.whatsapp_number || '')}"></div>
-        <div class="flex gap-4 mt-4"><button id="saveSettingsBtn" class="px-4 py-2 bg-green-600 text-white rounded">💾 Save Settings</button><button id="cancelSettingsBtn" class="px-4 py-2 bg-gray-500 text-white rounded">Cancel</button></div>
-        <p class="text-xs text-gray-500 mt-3">Note: Google Client ID and Spreadsheet settings have been removed. App uses localStorage adapter for persistence.</p>
-      `;
-      document.getElementById('saveSettingsBtn').addEventListener('click', saveSettings);
-      document.getElementById('cancelSettingsBtn').addEventListener('click', ()=> switchView('form'));
-    }
-
-    function saveSettings(){
-      const s = {
-        form_title: document.getElementById('settingFormTitle').value.trim(),
-        budget_year: document.getElementById('settingBudgetYear').value.trim(),
-        organization_name: document.getElementById('settingOrganizationName').value.trim(),
-        doc_number_format: document.getElementById('settingDocNumberFormat').value.trim(),
-        logo_url: document.getElementById('settingLogoUrl').value.trim(),
-        whatsapp_number: document.getElementById('settingWhatsAppNumber').value.trim(),
-        submit_button_text: defaultConfig.submit_button_text,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      };
-      localStorage.setItem('atk_form_title', s.form_title);
-      localStorage.setItem('atk_budget_year', s.budget_year);
-      localStorage.setItem('atk_org', s.organization_name);
-      localStorage.setItem('atk_doc_prefix', s.doc_number_format);
-      localStorage.setItem('atk_logo', s.logo_url);
-      localStorage.setItem('atk_whatsapp_number', s.whatsapp_number);
-      appSettings = s;
-      applySettingsToUI();
-      showToast('Settings disimpan (lokal)');
-      switchView('form');
-    }
-
-    // ---------- Local persistence ----------
-    function saveLocalRequests(){
-      try{ localStorage.setItem('atk_requests', JSON.stringify(currentRequests)); }catch(e){ console.warn('saveLocalRequests failed', e); }
-    }
-    function loadLocalRequests(){
-      try{ const raw = localStorage.getItem('atk_requests'); if(raw){ currentRequests = JSON.parse(raw); } else currentRequests = []; }catch(e){ console.warn('loadLocalRequests failed', e); currentRequests = []; }
-    }
-
-    // ---------- Render lists (with filters and export) ----------
-    function renderAllRequests(){
-      const container=document.getElementById('allRequestsList');
-      const requests=(currentRequests||[]).filter(r=>r.recordType==='request');
-      if(requests.length===0){ container.innerHTML='<p class="text-gray-500 text-center py-8">Belum ada permintaan</p>'; return; }
-      const sorted = requests.slice().sort((a,b)=> new Date(b.createdAt) - new Date(a.createdAt));
-      container.innerHTML = '';
-      sorted.forEach(r=>{
-        const card=document.createElement('div'); card.className='border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow';
-        const statusBadge = `<span class="px-3 py-1 rounded-full text-sm font-semibold ${getStatusColor(r.status)}">${r.status}</span>`;
-        card.innerHTML = `
-          <div class="flex justify-between items-start mb-2">
-            <div class="flex-1 cursor-pointer">
-              <h3 class="font-bold text-lg text-gray-800">${escapeHtml(r.documentNumber)}</h3>
-              <p class="text-sm text-gray-600">${escapeHtml(r.workUnit)} - ${escapeHtml(r.year)}</p>
-            </div>
-            <div class="flex gap-2 items-start">
-              ${statusBadge}
-              <button class="open-wa px-3 py-1 bg-green-500 text-white rounded-lg">📱 Buka WA</button>
-              <button class="delete-req px-3 py-1 bg-red-500 text-white rounded-lg">🗑️ Hapus</button>
-            </div>
-          </div>
-          <div class="cursor-pointer view-detail">
-            <p class="text-sm text-gray-700 mb-2"><strong>Requester:</strong> ${escapeHtml(r.requesterName)} (${escapeHtml(r.requesterNIP)})</p>
-            <p class="text-sm text-gray-600"><strong>Date:</strong> ${formatDate(r.submissionDate)}</p>
-          </div>
-        `;
-        card.querySelector('.view-detail').addEventListener('click', ()=> viewRequestDetail(r.__backendId || r.documentNumber));
-        card.querySelector('.open-wa').addEventListener('click', ()=> openWhatsApp(r.__backendId || r.documentNumber));
-        card.querySelector('.delete-req').addEventListener('click', async (ev)=> {
-          ev.stopPropagation();
-          if(!confirm('Yakin ingin menghapus permintaan ini?')) return;
-          const sdk = ensureDataSdk();
-          if(sdk && sdk.delete){
-            const result = await sdk.delete(r);
-            if(result && result.isOk){ showToast('Permintaan berhasil dihapus'); }
-            else { showToast('Gagal menghapus', true); console.error('delete error', result); }
-          } else {
-            currentRequests = currentRequests.filter(x => (x.__backendId || x.documentNumber) !== (r.__backendId || r.documentNumber));
-            saveLocalRequests();
-            renderAllRequests();
-            showToast('Dihapus (local)');
-          }
-        });
-        container.appendChild(card);
-      });
-    }
-
-    function getStatusColor(status){
-      switch(status){
-        case 'Pending Verification': return 'bg-yellow-200 text-yellow-800';
-        case 'Verified - Pending Approval': return 'bg-blue-200 text-blue-800';
-        case 'Fully Approved': return 'bg-green-200 text-green-800';
-        case 'Rejected by Verifier': case 'Rejected by Supervisor': return 'bg-red-200 text-red-800';
-        default: return 'bg-gray-200 text-gray-800';
-      }
-    }
-
-    // ---------- Detail view (with verifier & supervisor signature pads) ----------
-    window.viewRequestDetail = function(id){
-      const req = currentRequests.find(r=> (r.__backendId && r.__backendId===id) || (r.documentNumber && r.documentNumber===id));
-      if(!req){ showToast('Request not found', true); return; }
-      editingRequestId = req.__backendId || req.documentNumber;
-      const dv = document.getElementById('requestDetailView');
-
-      // helper to render signature image or fallback text
-      function sigHtml(key, value){
-        if(value && value.trim()!=='') return `<img src="${value}" alt="${key}" style="max-width:260px;border:1px solid #e5e7eb;padding:6px;border-radius:6px;background:white">`;
-        return `<div class="text-gray-500 text-sm">No signature</div>`;
-      }
-
-      dv.innerHTML = `
-        <div class="no-print mb-4">
-          <button onclick="switchView('requests')" class="px-4 py-2 bg-gray-500 text-white rounded">← Back</button>
-          <button onclick="window.printDocument && window.printDocument()" class="ml-2 px-4 py-2 bg-blue-500 text-white rounded">🖨️ Print / Export PDF</button>
-        </div>
-
-        <div class="mb-8 border-b-2 border-gray-800 pb-6">
-          <div class="flex items-center gap-6">
-            ${getLogoHTML(getCurrentSettings().logo_url)}
-            <div>
-              <h1 class="text-3xl font-bold">${escapeHtml(getCurrentSettings().form_title)}</h1>
-              <p>Tahun Anggaran ${escapeHtml(getCurrentSettings().budget_year)}</p>
-              <p>${escapeHtml(getCurrentSettings().organization_name)}</p>
-            </div>
-          </div>
-        </div>
-
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
         <div>
-          <div class="grid grid-cols-3 gap-4 mb-4">
-            <div>
-              <p class="text-sm font-semibold text-gray-700">Document Number</p>
-              <p class="text-gray-900">${escapeHtml(req.documentNumber)}</p>
-            </div>
-            <div>
-              <p class="text-sm font-semibold text-gray-700">Year</p>
-              <p class="text-gray-900">${escapeHtml(req.year)}</p>
-            </div>
-            <div>
-              <p class="text-sm font-semibold text-gray-700">Work Unit</p>
-              <p class="text-gray-900">${escapeHtml(req.workUnit)}</p>
-            </div>
-          </div>
+          <label class="text-sm font-semibold">No Dokumen</label>
+          <input id="documentNumber" readonly class="mt-2 w-full px-3 py-2 border rounded bg-gray-100">
+        </div>
+        <div>
+          <label class="text-sm font-semibold">Tahun</label>
+          <select id="yearSelect" class="mt-2 w-full border rounded px-3 py-2"></select>
+        </div>
+        <div>
+          <label class="text-sm font-semibold">Bagian/Fungsi</label>
+          <select id="workUnitSelect" class="mt-2 w-full border rounded px-3 py-2">
+            <option value="">Pilih Bagian/Fungsi</option>
+            <option>Subbagian Umum</option>
+            <option>Sosial</option>
+            <option>Produksi</option>
+            <option>Distribusi</option>
+            <option>Nerwilis</option>
+            <option>IPDS</option>
+          </select>
+        </div>
+      </div>
 
-          <h2 class="text-xl font-bold mb-2">ATK Items</h2>
-          <table class="w-full border-collapse border border-gray-300 mb-4">
-            <thead class="bg-gray-100"><tr><th class="px-3 py-2">No</th><th class="px-3 py-2">Item Name</th><th class="px-3 py-2">Quantity</th><th class="px-3 py-2">Notes / Remarks</th></tr></thead>
-            <tbody>
-              ${JSON.parse(req.items).map((it,i)=>`<tr><td class="border px-3">${i+1}</td><td class="border px-3">${escapeHtml(it.name)}</td><td class="border px-3">${escapeHtml(String(it.quantity))}</td><td class="border px-3">${escapeHtml(it.notes||'-')}</td></tr>`).join('')}
-            </tbody>
+      <!-- Items -->
+      <div class="mb-4">
+        <div class="flex justify-between items-center mb-2">
+          <h2 class="font-bold text-lg">Rincian ATK</h2>
+          <button id="btnAddItem" class="px-3 py-2 bg-green-600 text-white rounded">+ Tambah Item</button>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full border-collapse">
+            <thead>
+              <tr class="bg-gray-100">
+                <th class="p-3 border">No</th>
+                <th class="p-3 border">Nama Item</th>
+                <th class="p-3 border w-28">Jumlah</th>
+                <th class="p-3 border">Satuan</th>
+                <th class="p-3 border">Aksi</th>
+              </tr>
+            </thead>
+            <tbody id="itemsTableBody"></tbody>
           </table>
+        </div>
+      </div>
 
-          <p class="text-gray-700"><strong>Submission:</strong> ${escapeHtml(req.submissionLocation)}, ${formatDate(req.submissionDate)}</p>
-          <p class="text-gray-700 mt-2"><strong>Status:</strong> <span class="px-3 py-1 rounded-full ${getStatusColor(req.status)}">${escapeHtml(req.status)}</span></p>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+        <div>
+          <label class="text-sm font-semibold">Lokasi Pengajuan</label>
+          <input id="submissionLocation" value="Jakarta" class="mt-2 w-full px-3 py-2 border rounded">
+        </div>
+        <div>
+          <label class="text-sm font-semibold">Tanggal Pengajuan</label>
+          <input id="submissionDate" type="date" class="mt-2 w-full px-3 py-2 border rounded">
+        </div>
+      </div>
+
+      <div class="mb-6">
+        <h2 class="text-lg font-bold mb-2">Informasi Pemohon</h2>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label class="text-sm">Nama *</label>
+            <input id="requesterName" class="mt-2 w-full px-3 py-2 border rounded" placeholder="Nama pemohon">
+          </div>
+          <div>
+            <label class="text-sm">NIP *</label>
+            <input id="requesterNIP" class="mt-2 w-full px-3 py-2 border rounded" placeholder="contoh: 199012345678901234">
+          </div>
         </div>
 
-        <div class="border-t-2 border-gray-200 pt-6 mb-6">
-          <h2 class="text-xl font-bold mb-4">Requester Information</h2>
-          <div class="grid grid-cols-2 gap-4 mb-4">
-            <div><p class="text-sm font-semibold text-gray-700">Name</p><p class="text-gray-900">${escapeHtml(req.requesterName)}</p></div>
-            <div><p class="text-sm font-semibold text-gray-700">NIP</p><p class="text-gray-900">${escapeHtml(req.requesterNIP)}</p></div>
-          </div>
-          <div class="digital-signature">
-            <p class="text-green-700 font-semibold mb-1">✓ DIGITALLY SIGNED</p>
-            <div id="requesterSigDisplay">${sigHtml('requester', req.signatureRequester || '')}</div>
-            <p class="text-gray-600 text-sm mt-2"><strong>Timestamp:</strong> ${formatTimestamp(req.createdAt)}</p>
-          </div>
-        </div>
-
-        ${req.status === 'Pending Verification' ? `
-          <div class="border-t-2 border-gray-200 pt-6 no-print">
-            <h2 class="text-xl font-bold mb-4">Verifikator Section (Step 1 of 2)</h2>
-
-            <div class="grid grid-cols-2 gap-4 mb-4">
-              <div><label class="block text-sm font-semibold mb-2">Verifikator Name *</label><input type="text" id="verifierName" class="w-full px-4 py-2 border rounded"></div>
-              <div><label class="block text-sm font-semibold mb-2">Verifikator NIP *</label><input type="text" id="verifierNIP" class="w-full px-4 py-2 border rounded"></div>
-            </div>
-
-            <div class="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-              <p class="text-sm text-blue-800"><strong>ℹ️ Digital Signature:</strong> Your verification will be digitally signed with your name, NIP, and timestamp.</p>
-            </div>
-
-            <!-- Verifier signature pad -->
-            <div class="mb-4">
-              <label class="block text-sm font-semibold mb-2">Tanda Tangan Verifikator (mouse / touch)</label>
-              <canvas id="verifierSignatureCanvas" class="signature-canvas w-full" style="height:140px;"></canvas>
-              <div class="flex gap-2 mt-2">
-                <button id="verifierClearBtn" class="px-3 py-2 bg-gray-500 text-white rounded">Clear</button>
-                <button id="verifierSaveBtn" class="px-3 py-2 bg-green-600 text-white rounded">Save Signature</button>
-                <div id="verifierSigPreview" class="ml-4"></div>
-              </div>
-              <input type="hidden" id="verifierSignatureInput" />
-            </div>
-
-            <div class="flex gap-4">
-              <button id="verifyNowBtn" class="flex-1 px-6 py-3 bg-green-600 text-white rounded-lg font-bold">✓ Verify & Send to Penanggung Jawab</button>
-              <button onclick="showRejectModal('verifier')" class="flex-1 px-6 py-3 bg-red-600 text-white rounded-lg font-bold">✗ Reject Request</button>
-            </div>
-          </div>
-        ` : req.status === 'Verified - Pending Approval' ? `
-          <div class="border-t-2 border-gray-200 pt-6">
-            <h2 class="text-xl font-bold mb-6 text-center">Verification Status</h2>
-            <div class="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg">
-              <p class="text-green-800 font-semibold mb-2">✓ Step 1: Verified by Verifikator</p>
-              <p class="text-sm text-gray-700"><strong>Verifikator:</strong> ${escapeHtml(req.verifierName)} (${escapeHtml(req.verifierNIP)})</p>
-              <p class="text-sm text-gray-600"><strong>Date:</strong> ${formatDate(req.verificationDate)}</p>
-            </div>
-
-            <div class="no-print">
-              <h2 class="text-xl font-bold mb-4">Penanggung Jawab Final Approval (Step 2 of 2)</h2>
-
-              <div class="grid grid-cols-2 gap-4 mb-4">
-                <div><label class="block text-sm font-semibold mb-2">Penanggung Jawab Name *</label><input type="text" id="supervisorName" class="w-full px-4 py-2 border rounded"></div>
-                <div><label class="block text-sm font-semibold mb-2">Penanggung Jawab NIP *</label><input type="text" id="supervisorNIP" class="w-full px-4 py-2 border rounded"></div>
-              </div>
-
-              <div class="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                <p class="text-sm text-blue-800"><strong>ℹ️ Digital Signature:</strong> Your final approval will be digitally signed with your name, NIP, and timestamp.</p>
-              </div>
-
-              <!-- Supervisor signature pad -->
-              <div class="mb-4">
-                <label class="block text-sm font-semibold mb-2">Tanda Tangan Penanggung Jawab (mouse / touch)</label>
-                <canvas id="supervisorSignatureCanvas" class="signature-canvas w-full" style="height:140px;"></canvas>
+        <div class="mt-4 p-3 bg-blue-50 border rounded">
+          <div class="flex items-start gap-3">
+            <div class="w-1/2">
+              <p class="text-sm font-semibold mb-1">Tanda Tangan Digital (Pemohon)</p>
+              <div class="signature-card">
+                <canvas id="requesterSignatureCanvas" class="signature-canvas"></canvas>
                 <div class="flex gap-2 mt-2">
-                  <button id="supervisorClearBtn" class="px-3 py-2 bg-gray-500 text-white rounded">Clear</button>
-                  <button id="supervisorSaveBtn" class="px-3 py-2 bg-green-600 text-white rounded">Save Signature</button>
-                  <div id="supervisorSigPreview" class="ml-4"></div>
+                  <button id="reqSigClear" class="px-3 py-1 bg-red-500 text-white rounded">Clear</button>
+                  <button id="reqSigSave" class="px-3 py-1 bg-green-600 text-white rounded">Save Signature</button>
                 </div>
-                <input type="hidden" id="supervisorSignatureInput" />
-              </div>
-
-              <div class="flex gap-4">
-                <button id="approveNowBtn" class="flex-1 px-6 py-3 bg-green-600 text-white rounded-lg font-bold">✓ Give Final Approval</button>
-                <button onclick="showRejectModal('supervisor')" class="flex-1 px-6 py-3 bg-red-600 text-white rounded-lg font-bold">✗ Reject Request</button>
               </div>
             </div>
-          </div>
-        ` : `
-          <div class="border-t-2 border-gray-200 pt-6">
-            <h2 class="text-xl font-bold mb-6 text-center">GOODS RELEASE SECTION</h2>
-            <div class="grid grid-cols-3 gap-6 mb-6">
-              <div class="text-center">
-                <p class="text-sm font-semibold text-gray-700 mb-4">Verifikator</p>
-                ${req.signatureVerifier ? `<div class="digital-signature mx-auto" style="max-width:300px;">${sigHtml('verifier', req.signatureVerifier)}</div>` : '<p class="text-gray-500 text-sm">Not verified</p>'}
-              </div>
-              <div class="text-center">
-                <p class="text-sm font-semibold text-gray-700 mb-4">Penanggung Jawab</p>
-                ${req.signatureSupervisor ? `<div class="digital-signature mx-auto" style="max-width:300px;">${sigHtml('supervisor', req.signatureSupervisor)}</div>` : '<p class="text-gray-500 text-sm">Not approved</p>'}
-              </div>
-              <div class="text-center">
-                <p class="text-sm font-semibold text-gray-700 mb-4">Requester</p>
-                <div class="digital-signature mx-auto" style="max-width:300px;">${sigHtml('requester', req.signatureRequester || '')}</div>
-              </div>
-            </div>
-
-            ${req.rejectionReason ? `<div class="mt-6 p-4 bg-red-50 border border-red-200 rounded-lg"><p class="text-sm font-semibold text-red-800 mb-2">Rejected by: ${escapeHtml(req.rejectedBy)}</p><p class="text-red-700">${escapeHtml(req.rejectionReason)}</p></div>` : ''}
-          </div>
-        `}
-      `;
-
-      // After rendering detail view, init signature pads (if present)
-      // init verifier pad if pending verification
-      if(req.status === 'Pending Verification'){
-        initVerifierSignaturePad(req);
-        document.getElementById('verifyNowBtn').addEventListener('click', async ()=> {
-          // auto-save signature if drawn but not saved
-          if(verifierSigPad && !verifierSignatureDataUrl && !verifierSigPad.isEmpty()){
-            verifierSignatureDataUrl = verifierSigPad.toDataURL('image/png');
-            document.getElementById('verifierSignatureInput').value = verifierSignatureDataUrl;
-            renderVerifierSigPreview(verifierSignatureDataUrl);
-          }
-          // apply verification
-          await verifyRequest();
-        });
-      }
-
-      if(req.status === 'Verified - Pending Approval'){
-        initSupervisorSignaturePad(req);
-        document.getElementById('approveNowBtn').addEventListener('click', async ()=> {
-          if(supervisorSigPad && !supervisorSignatureDataUrl && !supervisorSigPad.isEmpty()){
-            supervisorSignatureDataUrl = supervisorSigPad.toDataURL('image/png');
-            document.getElementById('supervisorSignatureInput').value = supervisorSignatureDataUrl;
-            renderSupervisorSigPreview(supervisorSignatureDataUrl);
-          }
-          await approveRequestFinal();
-        });
-      }
-
-      switchView('detail');
-    };
-
-    // Verifier signature pad init & helpers
-    function initVerifierSignaturePad(req){
-      const canvas = document.getElementById('verifierSignatureCanvas');
-      if(!canvas) return;
-      fitToContainer(canvas);
-      verifierSigPad = new SignaturePad(canvas, { penColor: "rgb(22,78,99)" });
-      // if record already has signatureVerifier, show preview
-      if(req.signatureVerifier){
-        renderVerifierSigPreview(req.signatureVerifier);
-      }
-      document.getElementById('verifierClearBtn').addEventListener('click', ()=> { verifierSigPad.clear(); verifierSignatureDataUrl = null; document.getElementById('verifierSignatureInput').value = ''; document.getElementById('verifierSigPreview').innerHTML = ''; });
-      document.getElementById('verifierSaveBtn').addEventListener('click', ()=> {
-        if(verifierSigPad.isEmpty()){ showToast('Tandatangan kosong — silakan tanda tangan terlebih dahulu', true); return; }
-        const dataUrl = verifierSigPad.toDataURL('image/png');
-        verifierSignatureDataUrl = dataUrl;
-        document.getElementById('verifierSignatureInput').value = dataUrl;
-        renderVerifierSigPreview(dataUrl);
-        showToast('Signature verifier saved (preview shown)');
-      });
-    }
-    function renderVerifierSigPreview(dataUrl){
-      const c=document.getElementById('verifierSigPreview'); if(!c) return;
-      c.innerHTML = `<img src="${dataUrl}" alt="verifier sig" style="max-height:80px;border:1px solid #e5e7eb;padding:4px;border-radius:4px;background:white">`;
-    }
-
-    // Supervisor signature pad init & helpers
-    function initSupervisorSignaturePad(req){
-      const canvas = document.getElementById('supervisorSignatureCanvas');
-      if(!canvas) return;
-      fitToContainer(canvas);
-      supervisorSigPad = new SignaturePad(canvas, { penColor: "rgb(22,78,99)" });
-      if(req.signatureSupervisor){
-        renderSupervisorSigPreview(req.signatureSupervisor);
-      }
-      document.getElementById('supervisorClearBtn').addEventListener('click', ()=> { supervisorSigPad.clear(); supervisorSignatureDataUrl = null; document.getElementById('supervisorSignatureInput').value = ''; document.getElementById('supervisorSigPreview').innerHTML = ''; });
-      document.getElementById('supervisorSaveBtn').addEventListener('click', ()=> {
-        if(supervisorSigPad.isEmpty()){ showToast('Tandatangan kosong — silakan tanda tangan terlebih dahulu', true); return; }
-        const dataUrl = supervisorSigPad.toDataURL('image/png');
-        supervisorSignatureDataUrl = dataUrl;
-        document.getElementById('supervisorSignatureInput').value = dataUrl;
-        renderSupervisorSigPreview(dataUrl);
-        showToast('Signature supervisor saved (preview shown)');
-      });
-    }
-    function renderSupervisorSigPreview(dataUrl){
-      const c=document.getElementById('supervisorSigPreview'); if(!c) return;
-      c.innerHTML = `<img src="${dataUrl}" alt="supervisor sig" style="max-height:80px;border:1px solid #e5e7eb;padding:4px;border-radius:4px;background:white">`;
-    }
-
-    // ---------- WhatsApp ----------
-    function getWhatsAppUrl(requestId){
-      const req = currentRequests.find(r=> (r.__backendId && r.__backendId===requestId) || (r.documentNumber && r.documentNumber===requestId));
-      if(!req) return null;
-      const phone = localStorage.getItem('atk_whatsapp_number') || getCurrentSettings().whatsapp_number || '';
-      if(!phone) return null;
-      const items = JSON.parse(req.items);
-      const itemsList = items.map((it,idx)=> `${idx+1}. ${it.name} (${it.quantity})`).join('%0A');
-      let message = `*Pengingat Permintaan ATK*%0A%0A`;
-      message += `*Dokumen:* ${req.documentNumber}%0A`;
-      message += `*Status:* ${req.status}%0A`;
-      message += `*Bagian/Fungsi:* ${req.workUnit}%0A`;
-      message += `*Tahun:* ${req.year}%0A%0A`;
-      message += `*Pemohon:*%0ANama: ${req.requesterName}%0A NIP: ${req.requesterNIP}%0A%0A`;
-      message += `*Item yang Diminta:*%0A${itemsList}%0A%0A`;
-      message += `*Tanggal Pengajuan:* ${formatDate(req.submissionDate)}%0A`;
-      message += `*Lokasi:* ${req.submissionLocation}%0A%0A`;
-      if(req.status==='Pending Verification') message += `⚠️ Permintaan ini menunggu verifikasi. Mohon tinjau dan verifikasi.`;
-      else if(req.status==='Verified - Pending Approval') message += `⚠️ Permintaan ini menunggu persetujuan akhir.`;
-      else if(req.status==='Fully Approved') message += `✅ Permintaan ini telah disetujui.`;
-      return `https://wa.me/${phone}?text=${message}`;
-    }
-    function openWhatsApp(requestId){ const url=getWhatsAppUrl(requestId); if(!url){ showToast('Nomor WhatsApp belum diatur di Settings', true); return; } window.open(url,'_blank','noopener'); }
-
-    // ---------- Filters helpers ----------
-    function populateFilters(){
-      const monthEl = document.getElementById('filterMonth'); const yearEl = document.getElementById('filterYear');
-      const months = ['All','01 - January','02 - February','03 - March','04 - April','05 - May','06 - June','07 - July','08 - August','09 - September','10 - October','11 - November','12 - December'];
-      monthEl.innerHTML = months.map((m,i)=>`<option value="${i===0? 'all' : (String(i).padStart(2,'0'))}">${m}</option>`).join('');
-      const cy=(new Date()).getFullYear(); let options='<option value="all">All</option>'; for(let y=cy+2;y>=cy-5;y--){ options+=`<option value="${y}">${y}</option>`; } yearEl.innerHTML=options;
-    }
-
-    function renderAllRequestsFiltered(){
-      const month = document.getElementById('filterMonth').value;
-      const year = document.getElementById('filterYear').value;
-      const container = document.getElementById('allRequestsList');
-      const all = (currentRequests||[]).filter(r=>r.recordType==='request');
-      const filtered = all.filter(r=>{
-        if(month!=='all'){ const d = r.submissionDate ? new Date(r.submissionDate) : null; const m = d ? String(d.getMonth()+1).padStart(2,'0') : null; if(m !== month) return false; }
-        if(year !== 'all'){ if(String(r.year) !== String(year)) return false; }
-        return true;
-      });
-      if(filtered.length===0){ container.innerHTML = '<p class="text-gray-500 text-center py-8">Tidak ada data sesuai filter</p>'; return; }
-      container.innerHTML = '';
-      filtered.slice().sort((a,b)=> new Date(b.createdAt) - new Date(a.createdAt)).forEach(r=>{
-        const card=document.createElement('div'); card.className='border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow';
-        const statusBadge = `<span class="px-3 py-1 rounded-full text-sm font-semibold ${getStatusColor(r.status)}">${r.status}</span>`;
-        card.innerHTML = `
-          <div class="flex justify-between items-start mb-2">
-            <div class="flex-1 cursor-pointer">
-              <h3 class="font-bold text-lg text-gray-800">${escapeHtml(r.documentNumber)}</h3>
-              <p class="text-sm text-gray-600">${escapeHtml(r.workUnit)} - ${escapeHtml(r.year)}</p>
-            </div>
-            <div class="flex gap-2 items-start">
-              ${statusBadge}
-              <button class="open-wa px-3 py-1 bg-green-500 text-white rounded-lg">📱 Buka WA</button>
-              <button class="delete-req px-3 py-1 bg-red-500 text-white rounded-lg">🗑️ Hapus</button>
+            <div class="flex-1 text-sm text-gray-700">
+              <p><strong>ℹ️ Petunjuk:</strong> Tanda tangan menggunakan mouse atau sentuh pada area di kiri. Setelah disimpan, tanda tangan akan tercantum pada dokumen.</p>
             </div>
           </div>
-          <div class="cursor-pointer view-detail">
-            <p class="text-sm text-gray-700 mb-2"><strong>Requester:</strong> ${escapeHtml(r.requesterName)} (${escapeHtml(r.requesterNIP)})</p>
-            <p class="text-sm text-gray-600"><strong>Date:</strong> ${formatDate(r.submissionDate)}</p>
+        </div>
+
+      </div>
+
+      <div class="mt-6">
+        <button id="submitRequestBtn" class="w-full px-6 py-3 bg-blue-600 text-white rounded text-lg font-bold">Kirim Permintaan</button>
+      </div>
+    </div>
+
+    <!-- All Requests View -->
+    <div id="viewAll" class="hidden bg-white rounded shadow p-6">
+      <div class="flex items-center gap-4 mb-4">
+        <h2 class="text-xl font-bold">Semua Permintaan ATK</h2>
+        <div class="ml-auto flex items-center gap-2">
+          <label class="text-sm">Filter Bulan</label>
+          <select id="filterMonth" class="border rounded px-2 py-1">
+            <option value="">Semua</option>
+            <option value="01">Jan</option><option value="02">Feb</option><option value="03">Mar</option>
+            <option value="04">Apr</option><option value="05">Mei</option><option value="06">Jun</option>
+            <option value="07">Jul</option><option value="08">Agu</option><option value="09">Sep</option>
+            <option value="10">Okt</option><option value="11">Nov</option><option value="12">Des</option>
+          </select>
+          <label class="text-sm">Tahun</label>
+          <select id="filterYear" class="border rounded px-2 py-1"></select>
+          <button id="btnExportFiltered" class="ml-2 px-3 py-1 bg-indigo-700 text-white rounded">Export Filtered</button>
+        </div>
+      </div>
+
+      <div id="allRequestsList" class="space-y-4"></div>
+    </div>
+
+    <!-- Verifier View -->
+    <div id="viewVerifier" class="hidden bg-white rounded shadow p-6">
+      <h2 class="text-xl font-bold mb-4">Dashboard Verifikator</h2>
+      <div id="verifierRequestsList" class="space-y-4"></div>
+    </div>
+
+    <!-- Supervisor View -->
+    <div id="viewSupervisor" class="hidden bg-white rounded shadow p-6">
+      <h2 class="text-xl font-bold mb-4">Dashboard Penanggung Jawab</h2>
+      <div id="supervisorRequestsList" class="space-y-4"></div>
+    </div>
+
+    <!-- Detail View (used for request detail + verification) -->
+    <div id="viewDetail" class="hidden bg-white rounded shadow p-6 print-section"></div>
+
+    <!-- Settings -->
+    <div id="viewSettings" class="hidden bg-white rounded shadow p-6">
+      <h2 class="text-xl font-bold mb-4">Pengaturan</h2>
+      <div class="mb-4">
+        <label class="text-sm">Judul Form</label>
+        <input id="settingFormTitle" class="mt-2 w-full px-3 py-2 border rounded" placeholder="Form Permintaan ATK">
+      </div>
+      <div class="mb-4">
+        <label class="text-sm">Tahun Anggaran</label>
+        <input id="settingBudgetYear" class="mt-2 w-48 px-3 py-2 border rounded" placeholder="2025">
+      </div>
+      <div class="mb-4">
+        <label class="text-sm">Nama Organisasi</label>
+        <input id="settingOrgName" class="mt-2 w-full px-3 py-2 border rounded" placeholder="BPS Kota Jakarta Selatan">
+      </div>
+      <div class="mb-4">
+        <label class="text-sm">Logo URL (opsional)</label>
+        <input id="settingLogoUrl" class="mt-2 w-full px-3 py-2 border rounded" placeholder="https://example.com/logo.png">
+      </div>
+      <div class="flex gap-3">
+        <button id="saveSettingsBtn" class="px-4 py-2 bg-green-600 text-white rounded">💾 Save Settings</button>
+        <button id="cancelSettingsBtn" class="px-4 py-2 bg-gray-500 text-white rounded">Cancel</button>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Toast container -->
+  <div id="toastContainer"></div>
+
+<script>
+/* ======= Simple local storage "database" and utilities ======= */
+const STORAGE_KEY = 'atk_requests_v1';
+const SETTINGS_KEY = 'atk_settings_v1';
+
+function loadLocalRequests(){
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch(e){ console.error(e); return []; }
+}
+function saveLocalRequests(data){
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data || currentRequests));
+  } catch(e){ console.error(e); }
+}
+
+function loadSettings(){
+  try { const s = localStorage.getItem(SETTINGS_KEY); return s ? JSON.parse(s) : null; } catch(e){ return null; }
+}
+function saveSettings(obj){
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify(obj));
+}
+
+/* ======= UI utility ======= */
+function showToast(msg, isError=false){
+  const id = 't'+Date.now();
+  const el = document.createElement('div');
+  el.id = id;
+  el.className = 'toast ' + (isError ? 'error' : '');
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(()=>{ el.remove(); }, 3500);
+}
+
+function escapeHtml(s){ if(!s) return ''; return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+function formatDate(d){
+  if(!d) return '-';
+  const date = new Date(d);
+  const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  return `${date.getDate()} ${months[date.getMonth()]} ${date.getFullYear()}`;
+}
+function formatTimestamp(iso){
+  if(!iso) return '-';
+  const dt = new Date(iso);
+  return dt.toLocaleString('en-GB', { hour12:false });
+}
+
+/* ======= App state ======= */
+let currentRequests = loadLocalRequests();
+let appSettings = loadSettings() || {
+  form_title: "Form Permintaan ATK",
+  budget_year: (new Date()).getFullYear().toString(),
+  organization_name: "BPS Kota Jakarta Selatan",
+  logo_url: ""
+};
+
+/* ======= Signature pads holders ======= */
+let requesterSigPad = null;
+let verifierSigPad = null;
+let supervisorSigPad = null;
+
+/* ======= Initial DOM refs ======= */
+const viewForm = document.getElementById('viewForm');
+const viewAll = document.getElementById('viewAll');
+const viewVerifier = document.getElementById('viewVerifier');
+const viewSupervisor = document.getElementById('viewSupervisor');
+const viewSettings = document.getElementById('viewSettings');
+const viewDetail = document.getElementById('viewDetail');
+
+const documentNumberInput = document.getElementById('documentNumber');
+const yearSelect = document.getElementById('yearSelect');
+const settingYear = document.getElementById('settingBudgetYear');
+const filterYear = document.getElementById('filterYear');
+
+/* ======= Init helpers ======= */
+function initYearDropdowns(){
+  const currentYear = new Date().getFullYear();
+  for(let i=currentYear-5;i<=currentYear+5;i++){
+    const opt = document.createElement('option'); opt.value = i; opt.textContent = i;
+    yearSelect.appendChild(opt);
+    const o2 = opt.cloneNode(true); filterYear.appendChild(o2);
+  }
+  yearSelect.value = appSettings.budget_year || currentYear;
+  filterYear.value = appSettings.budget_year || currentYear;
+}
+
+/* ======= Document number generator ======= */
+function generateDocumentNumber(){
+  const year = yearSelect.value || (new Date()).getFullYear().toString();
+  const date = document.getElementById('submissionDate').value || (new Date()).toISOString().split('T')[0];
+  const month = ("0" + (new Date(date).getMonth()+1)).slice(-2);
+  // find highest for same month/year
+  const existing = currentRequests.filter(r => r.recordType === 'request'
+    && r.documentNumber && r.documentNumber.split('/').length>=4
+    && r.documentNumber.split('/')[2] === month
+    && r.documentNumber.split('/')[3] === year)
+    .map(r => parseInt((r.documentNumber.split('/')[0]||'0'),10) || 0);
+  const next = (existing.length? Math.max(...existing)+1 : 1);
+  const padded = (""+next).padStart(4,'0');
+  return `${padded}/ATK/${month}/${year}`;
+}
+
+/* ======= Items table management ======= */
+function addItemRow(name='', qty=1, unit=''){
+  const tbody = document.getElementById('itemsTableBody');
+  const idx = tbody.children.length + 1;
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td class="p-2 border text-center">${idx}</td>
+    <td class="p-2 border"><input class="item-name w-full px-2 py-1 border rounded" value="${escapeHtml(name)}" placeholder="Masukkan nama item"></td>
+    <td class="p-2 border text-center"><input type="number" min="1" class="item-quantity w-20 px-2 py-1 border rounded" value="${escapeHtml(qty)}"></td>
+    <td class="p-2 border"><input class="item-unit w-full px-2 py-1 border rounded" value="${escapeHtml(unit)}" placeholder="Satuan (contoh: pcs)"></td>
+    <td class="p-2 border text-center"><button class="delete-row px-3 py-1 bg-red-500 text-white rounded">Hapus</button></td>
+  `;
+  tbody.appendChild(tr);
+  tr.querySelector('.delete-row').addEventListener('click', ()=>{
+    tr.remove(); updateRowNumbers();
+  });
+}
+function updateRowNumbers(){
+  const rows = Array.from(document.getElementById('itemsTableBody').children);
+  rows.forEach((r,i)=> r.children[0].textContent = i+1 );
+}
+function getItemsFromTable(){
+  const rows = Array.from(document.getElementById('itemsTableBody').children);
+  const items = [];
+  rows.forEach(row=>{
+    const name = row.querySelector('.item-name').value.trim();
+    const qty = parseInt(row.querySelector('.item-quantity').value) || 0;
+    const unit = row.querySelector('.item-unit').value.trim();
+    if(name && qty>0) items.push({ name, quantity: qty, unit });
+  });
+  return items;
+}
+
+/* ======= Signature utilities ======= */
+function fitToContainer(canvas){
+  // scale for high-DPI screens
+  const ratio = Math.max(window.devicePixelRatio || 1, 1);
+  const w = canvas.offsetWidth;
+  const h = canvas.offsetHeight;
+  canvas.width = Math.floor(w * ratio);
+  canvas.height = Math.floor(h * ratio);
+  canvas.getContext('2d').scale(ratio, ratio);
+}
+
+function initRequestSignature(){
+  const canvas = document.getElementById('requesterSignatureCanvas');
+  fitToContainer(canvas);
+  requesterSigPad = new SignaturePad(canvas, { penColor: "rgb(0,80,160)" });
+}
+function clearRequesterSig(){ if(requesterSigPad){ requesterSigPad.clear(); } }
+function saveRequesterSig(){
+  if(!requesterSigPad || requesterSigPad.isEmpty()){ showToast('Silakan buat tanda tangan terlebih dahulu', true); return; }
+  const dataUrl = requesterSigPad.toDataURL();
+  // show small confirmation
+  showToast('Tanda tangan pemohon disimpan');
+  // store to temporary hidden field in form (we'll include in request object)
+  document.getElementById('requesterSignatureCanvas').dataset.dataurl = dataUrl;
+}
+
+/* generic resize handler */
+window.addEventListener('resize', ()=>{
+  const c1 = document.getElementById('requesterSignatureCanvas');
+  if(c1 && requesterSigPad) { fitToContainer(c1); }
+  // detail view pads are initialized on demand
+});
+
+/* ======= Rendering lists/dashboards ======= */
+function renderAllRequests(){
+  const container = document.getElementById('allRequestsList');
+  const monthFilter = document.getElementById('filterMonth').value;
+  const yearFilterVal = document.getElementById('filterYear').value;
+  const list = currentRequests.filter(r => r.recordType === 'request')
+    .filter(r => {
+      if(!monthFilter && !yearFilterVal) return true;
+      const parts = (r.documentNumber||'').split('/');
+      const m = parts[2] || '';
+      const y = parts[3] || '';
+      if(monthFilter && yearFilterVal) return m === monthFilter && y === yearFilterVal;
+      if(monthFilter) return m === monthFilter;
+      if(yearFilterVal) return y === yearFilterVal;
+      return true;
+    })
+    .sort((a,b)=> new Date(b.createdAt) - new Date(a.createdAt));
+  if(list.length===0){
+    container.innerHTML = '<p class="text-gray-500 py-8 text-center">Belum ada permintaan</p>';
+    return;
+  }
+  container.innerHTML = list.map(r=>{
+    const statusBadge = `<span class="px-3 py-1 rounded-full text-sm ${getStatusColorClass(r.status)}">${escapeHtml(r.status)}</span>`;
+    return `
+      <div class="border rounded p-4 shadow-sm flex justify-between items-start">
+        <div onclick="viewRequestDetail('${r.__id}')" class="cursor-pointer">
+          <h3 class="font-bold">${escapeHtml(r.documentNumber)}</h3>
+          <p class="text-sm text-gray-600">${escapeHtml(r.workUnit)} - ${escapeHtml(r.year)}</p>
+          <p class="text-sm text-gray-600 mt-2"><strong>Requester:</strong> ${escapeHtml(r.requesterName)} (${escapeHtml(r.requesterNIP)})</p>
+          <p class="text-sm text-gray-600"><strong>Date:</strong> ${formatDate(r.submissionDate)}</p>
+        </div>
+        <div class="flex items-center gap-2">
+          ${statusBadge}
+          <button onclick="openWhatsAppFor('${r.__id}')" class="px-3 py-1 bg-green-500 text-white rounded">📱 Buka WA</button>
+          <button onclick="deleteRequest('${r.__id}', event)" class="px-3 py-1 bg-red-500 text-white rounded">🗑️ Hapus</button>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function getStatusColorClass(status){
+  switch(status){
+    case 'Pending Verification': return 'bg-yellow-200 text-yellow-800';
+    case 'Verified - Pending Approval': return 'bg-blue-200 text-blue-800';
+    case 'Fully Approved': return 'bg-green-200 text-green-800';
+    case 'Rejected by Verifier':
+    case 'Rejected by Supervisor': return 'bg-red-200 text-red-800';
+    default: return 'bg-gray-200 text-gray-800';
+  }
+}
+
+function renderVerifierDashboard(){
+  const container = document.getElementById('verifierRequestsList');
+  const pending = currentRequests.filter(r => r.recordType === 'request' && r.status === 'Pending Verification')
+    .sort((a,b)=> new Date(b.createdAt) - new Date(a.createdAt));
+  if(pending.length===0){ container.innerHTML = '<p class="text-gray-500 py-6 text-center">Tidak ada permintaan menunggu verifikasi</p>'; return; }
+  container.innerHTML = pending.map(r=>`
+    <div class="p-4 border rounded cursor-pointer hover:shadow-sm" onclick="viewRequestDetail('${r.__id}')">
+      <div class="flex justify-between">
+        <div>
+          <h3 class="font-bold">${escapeHtml(r.documentNumber)}</h3>
+          <p class="text-sm text-gray-600">${escapeHtml(r.workUnit)} - ${escapeHtml(r.year)}</p>
+        </div>
+        <span class="px-3 py-1 rounded-full bg-yellow-200 text-yellow-800">Step 1: Pending Verification</span>
+      </div>
+      <p class="text-sm text-gray-700 mt-2"><strong>Requester:</strong> ${escapeHtml(r.requesterName)} (${escapeHtml(r.requesterNIP)})</p>
+    </div>
+  `).join('');
+}
+
+function renderSupervisorDashboard(){
+  const container = document.getElementById('supervisorRequestsList');
+  const pending = currentRequests.filter(r => r.recordType === 'request' && r.status === 'Verified - Pending Approval')
+    .sort((a,b)=> new Date(b.updatedAt||b.createdAt) - new Date(a.updatedAt||a.createdAt));
+  if(pending.length===0){ container.innerHTML = '<p class="text-gray-500 py-6 text-center">Tidak ada permintaan menunggu persetujuan akhir</p>'; return; }
+  container.innerHTML = pending.map(r=>`
+    <div class="p-4 border rounded cursor-pointer hover:shadow-sm" onclick="viewRequestDetail('${r.__id}')">
+      <div class="flex justify-between">
+        <div>
+          <h3 class="font-bold">${escapeHtml(r.documentNumber)}</h3>
+          <p class="text-sm text-gray-600">${escapeHtml(r.workUnit)} - ${escapeHtml(r.year)}</p>
+        </div>
+        <span class="px-3 py-1 rounded-full bg-blue-200 text-blue-800">Step 2: Pending Final Approval</span>
+      </div>
+      <p class="text-sm text-gray-700 mt-2"><strong>Requester:</strong> ${escapeHtml(r.requesterName)} (${escapeHtml(r.requesterNIP)})</p>
+    </div>
+  `).join('');
+}
+
+/* ======= CRUD actions ======= */
+function createId(){ return 'r-'+Math.random().toString(36).slice(2,9); }
+
+async function submitRequest(){
+  // validations
+  const year = yearSelect.value;
+  const workUnit = document.getElementById('workUnitSelect').value;
+  const items = getItemsFromTable();
+  const requesterName = document.getElementById('requesterName').value.trim();
+  const requesterNIP = document.getElementById('requesterNIP').value.trim();
+  if(!year || !workUnit){ showToast('Mohon pilih tahun dan bagian/fungsi', true); return; }
+  if(items.length===0){ showToast('Mohon tambahkan minimal 1 item', true); return; }
+  if(!requesterName || !requesterNIP){ showToast('Mohon isi nama dan NIP pemohon', true); return; }
+
+  const docNumber = generateDocumentNumber();
+  const submissionDate = document.getElementById('submissionDate').value || (new Date()).toISOString().split('T')[0];
+  const submissionLocation = document.getElementById('submissionLocation').value || '';
+
+  // requester signature dataURL saved on save button into canvas.dataset.dataurl
+  const reqCanvas = document.getElementById('requesterSignatureCanvas');
+  const reqSignature = reqCanvas && reqCanvas.dataset && reqCanvas.dataset.dataurl ? reqCanvas.dataset.dataurl : null;
+
+  const record = {
+    __id: createId(),
+    recordType: 'request',
+    documentNumber: docNumber,
+    year,
+    workUnit,
+    items,
+    submissionDate,
+    submissionLocation,
+    requesterName,
+    requesterNIP,
+    requesterSignature: reqSignature,
+    status: 'Pending Verification',
+    verifierName: '',
+    verifierNIP: '',
+    verificationDate: '',
+    supervisorName: '',
+    supervisorNIP: '',
+    supervisorApprovalDate: '',
+    rejectionReason: '',
+    rejectedBy: '',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+
+  currentRequests.unshift(record);
+  saveLocalRequests();
+  // update UI
+  renderAllRequests();
+  renderVerifierDashboard();
+  renderSupervisorDashboard();
+  showToast('Permintaan berhasil dikirim');
+  // reset form
+  resetForm();
+  switchView('all');
+}
+
+function resetForm(){
+  document.getElementById('workUnitSelect').value = '';
+  document.getElementById('itemsTableBody').innerHTML = '';
+  addItemRow();
+  document.getElementById('requesterName').value = '';
+  document.getElementById('requesterNIP').value = '';
+  document.getElementById('submissionDate').value = (new Date()).toISOString().split('T')[0];
+  document.getElementById('submissionLocation').value = 'Jakarta';
+  clearRequesterSig();
+  const canvas = document.getElementById('requesterSignatureCanvas');
+  if(canvas) canvas.dataset.dataurl = '';
+}
+
+/* Delete */
+function deleteRequest(id, event){
+  if(event) event.stopPropagation();
+  const idx = currentRequests.findIndex(r => r.__id === id);
+  if(idx===-1){ showToast('Permintaan tidak ditemukan', true); return; }
+  if(!confirm('Yakin ingin menghapus permintaan ini?')) return;
+  currentRequests.splice(idx,1);
+  saveLocalRequests();
+  renderAllRequests();
+  renderVerifierDashboard();
+  renderSupervisorDashboard();
+  showToast('Permintaan berhasil dihapus');
+}
+
+/* WhatsApp helper (opens wa.me with prefilled message) */
+function openWhatsAppFor(id){
+  const r = currentRequests.find(x => x.__id === id);
+  if(!r){ showToast('Request not found', true); return; }
+  // use default (appSettings.whatsapp?), here we don't use whatsapp number - but allow copy to clipboard with message
+  const itemsList = (r.items||[]).map((it,i)=> `${i+1}. ${it.name} (${it.quantity})`).join('\n');
+  const message = `Pengingat Permintaan ATK\n\nDokumen: ${r.documentNumber}\nStatus: ${r.status}\nBagian: ${r.workUnit}\nTahun: ${r.year}\n\nPemohon:\nNama: ${r.requesterName}\nNIP: ${r.requesterNIP}\n\nItem:\n${itemsList}\n\nTanggal: ${formatDate(r.submissionDate)}`;
+  // copy to clipboard (user can paste into WA)
+  navigator.clipboard?.writeText(message).then(()=> showToast('Pesan disalin ke clipboard. Paste di WhatsApp untuk mengirim.'));
+}
+
+/* ======= Detail view (with signature pads for verifier & supervisor) ======= */
+function viewRequestDetail(id){
+  const r = currentRequests.find(x => x.__id === id);
+  if(!r) return;
+  // Build detail HTML
+  viewDetail.innerHTML = `
+    <div class="no-print mb-4">
+      <button id="backFromDetail" class="px-3 py-2 bg-gray-500 text-white rounded">← Back</button>
+      <button id="btnPrint" class="ml-2 px-3 py-2 bg-blue-500 text-white rounded">🖨️ Print / Export PDF</button>
+    </div>
+
+    <div class="mb-6 border-b pb-4">
+      <div class="flex items-center gap-4">
+        <div style="width:72px;height:72px;">
+          ${appSettings.logo_url ? `<img src="${appSettings.logo_url}" style="width:72px;height:72px;object-fit:contain;">` : ''}
+        </div>
+        <div>
+          <h2 class="text-2xl font-bold">${escapeHtml(appSettings.form_title)}</h2>
+          <div class="text-sm text-gray-600">${escapeHtml(appSettings.organization_name)}</div>
+          <div class="text-sm text-gray-500">Tahun Anggaran ${escapeHtml(appSettings.budget_year)}</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 text-sm">
+      <div><p class="font-semibold">Document Number</p><p>${escapeHtml(r.documentNumber)}</p></div>
+      <div><p class="font-semibold">Year</p><p>${escapeHtml(r.year)}</p></div>
+      <div><p class="font-semibold">Work Unit</p><p>${escapeHtml(r.workUnit)}</p></div>
+    </div>
+
+    <div class="mb-6">
+      <h3 class="font-bold mb-2">ATK Items</h3>
+      <table class="w-full border-collapse">
+        <thead><tr class="bg-gray-100"><th class="p-2 border">No</th><th class="p-2 border">Item Name</th><th class="p-2 border">Quantity</th><th class="p-2 border">Notes / Unit</th></tr></thead>
+        <tbody>
+          ${(r.items||[]).map((it,i)=>`<tr><td class="p-2 border text-center">${i+1}</td><td class="p-2 border">${escapeHtml(it.name)}</td><td class="p-2 border text-center">${escapeHtml(it.quantity)}</td><td class="p-2 border">${escapeHtml(it.unit||'-')}</td></tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="mb-6">
+      <p><strong>Submission:</strong> ${escapeHtml(r.submissionLocation)}, ${formatDate(r.submissionDate)}</p>
+      <p class="mt-2"><strong>Status:</strong> <span class="px-3 py-1 rounded ${getStatusColorClass(r.status)}">${escapeHtml(r.status)}</span></p>
+    </div>
+
+    <div class="border-t pt-6 mb-6">
+      <h3 class="font-bold mb-2">Requester Information</h3>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+        <div><p class="text-sm font-semibold">Name</p><p>${escapeHtml(r.requesterName)}</p></div>
+        <div><p class="text-sm font-semibold">NIP</p><p>${escapeHtml(r.requesterNIP)}</p></div>
+      </div>
+      <div class="mb-4">
+        <div class="p-4 bg-green-50 border rounded">
+          <p class="font-semibold text-green-700">✓ DIGITALLY SIGNED</p>
+          ${r.requesterSignature ? `<img src="${r.requesterSignature}" style="max-width:320px;display:block;margin-top:8px;border:1px solid #e5e7eb;padding:4px;border-radius:6px;">` : `<p class="text-sm text-gray-600">No signature saved</p>`}
+          <p class="text-xs text-gray-600 mt-2">Signed by: ${escapeHtml(r.requesterName)} | NIP: ${escapeHtml(r.requesterNIP)} | Date: ${formatDate(r.submissionDate)}</p>
+        </div>
+      </div>
+    </div>
+
+    <div id="verifierSection"></div>
+    <div id="supervisorSection"></div>
+
+  `;
+  // add back / print handlers
+  document.getElementById('backFromDetail').addEventListener('click', ()=> switchView('all'));
+  document.getElementById('btnPrint').addEventListener('click', ()=> window.print());
+
+  // Render verifier section if pending verification
+  const verifierSection = document.getElementById('verifierSection');
+  if(r.status === 'Pending Verification'){
+    verifierSection.innerHTML = `
+      <div class="border-t pt-6">
+        <h3 class="font-bold mb-3">Verifikator Section (Step 1 of 2)</h3>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+          <div><label class="text-sm">Verifikator Name *</label><input id="verifierNameInput" class="mt-2 w-full px-3 py-2 border rounded"></div>
+          <div><label class="text-sm">Verifikator NIP *</label><input id="verifierNIPInput" class="mt-2 w-full px-3 py-2 border rounded"></div>
+        </div>
+        <div class="mb-4">
+          <p class="text-sm font-semibold">Tanda Tangan Verifikator</p>
+          <div class="signature-card mt-2">
+            <canvas id="verifierSignatureCanvas" class="signature-canvas" style="height:200px;"></canvas>
+            <div class="flex gap-2 mt-2">
+              <button id="verSigClear" class="px-3 py-1 bg-red-500 text-white rounded">Clear</button>
+              <button id="verSigSave" class="px-3 py-1 bg-green-600 text-white rounded">Save Signature</button>
+            </div>
           </div>
-        `;
-        card.querySelector('.view-detail').addEventListener('click', ()=> viewRequestDetail(r.__backendId || r.documentNumber));
-        card.querySelector('.open-wa').addEventListener('click', ()=> openWhatsApp(r.__backendId || r.documentNumber));
-        card.querySelector('.delete-req').addEventListener('click', async (ev)=> {
-          ev.stopPropagation();
-          if(!confirm('Yakin ingin menghapus permintaan ini?')) return;
-          const sdk = ensureDataSdk();
-          if(sdk && sdk.delete){
-            const result = await sdk.delete(r);
-            if(result && result.isOk){ showToast('Permintaan berhasil dihapus'); renderAllRequestsFiltered(); }
-            else { showToast('Gagal menghapus', true); console.error('delete error', result); }
-          } else {
-            currentRequests = currentRequests.filter(x => (x.__backendId || x.documentNumber) !== (r.__backendId || r.documentNumber));
-            saveLocalRequests();
-            renderAllRequestsFiltered();
-            showToast('Dihapus (local)');
-          }
-        });
-        container.appendChild(card);
-      });
-    }
+        </div>
+        <div class="flex gap-3">
+          <button id="btnVerifyConfirm" class="px-4 py-2 bg-green-600 text-white rounded">✓ Verify & Send to Penanggung Jawab</button>
+          <button id="btnRejectVer" class="px-4 py-2 bg-red-600 text-white rounded">✗ Reject Request</button>
+        </div>
+      </div>
+    `;
+    // init verifier signature pad on demand
+    const vCanvas = document.getElementById('verifierSignatureCanvas');
+    fitToContainer(vCanvas);
+    verifierSigPad = new SignaturePad(vCanvas, { penColor: "rgb(10,100,50)" });
 
-    // ---------- Export XLSX filtered ----------
-    function exportAllRequestsToXLSXFiltered(){
-      const month = document.getElementById('filterMonth') ? document.getElementById('filterMonth').value : 'all';
-      const year = document.getElementById('filterYear') ? document.getElementById('filterYear').value : 'all';
-      const all = (currentRequests||[]).filter(r=>r.recordType==='request');
-      const rows = all.filter(r=>{
-        if(month !== 'all'){ const d = r.submissionDate ? new Date(r.submissionDate) : null; const m = d ? String(d.getMonth()+1).padStart(2,'0') : null; if(m !== month) return false; }
-        if(year !== 'all'){ if(String(r.year) !== String(year)) return false; }
-        return true;
-      });
-      if(!rows || rows.length===0){ showToast('Tidak ada data untuk diexport (sesuai filter)', true); return; }
+    document.getElementById('verSigClear').addEventListener('click', ()=> verifierSigPad && verifierSigPad.clear());
+    document.getElementById('verSigSave').addEventListener('click', ()=>{
+      if(!verifierSigPad || verifierSigPad.isEmpty()){ showToast('Silakan buat tanda tangan verifikator terlebih dahulu', true); return; }
+      vCanvas.dataset.dataurl = verifierSigPad.toDataURL();
+      showToast('Tanda tangan verifikator disimpan');
+    });
 
-      const wsData = [];
-      wsData.push(['Backend ID','Document Number','Year','Work Unit','Submission Date','Submission Location','Requester Name','Requester NIP','Status','Verifier Name','Verifier NIP','Verification Date','Supervisor Name','Supervisor NIP','Supervisor Approval Date','Rejection Reason','Rejected By','Created At','Updated At','Items']);
-      rows.forEach(r=>{
-        let itemsText=''; try{ const items = typeof r.items === 'string' ? JSON.parse(r.items || '[]') : (r.items || []); itemsText = items.map(it => { const notes = it.notes ? ` [${it.notes}]` : ''; return `${it.name} (${it.quantity})${notes}`; }).join(' ; '); }catch(e){ itemsText = String(r.items||''); }
-        wsData.push([ r.__backendId||'', r.documentNumber||'', r.year||'', r.workUnit||'', r.submissionDate?formatDate(r.submissionDate):'', r.submissionLocation||'', r.requesterName||'', r.requesterNIP||'', r.status||'', r.verifierName||'', r.verifierNIP||'', r.verificationDate||'', r.supervisorName||'', r.supervisorNIP||'', r.supervisorApprovalDate||'', r.rejectionReason||'', r.rejectedBy||'', r.createdAt||'', r.updatedAt||'', itemsText ]);
-      });
+    document.getElementById('btnVerifyConfirm').addEventListener('click', ()=>{
+      const vName = document.getElementById('verifierNameInput').value.trim();
+      const vNip = document.getElementById('verifierNIPInput').value.trim();
+      const vSig = vCanvas.dataset.dataurl || null;
+      if(!vName || !vNip){ showToast('Masukkan nama & NIP verifikator', true); return; }
+      // update record
+      r.verifierName = vName; r.verifierNIP = vNip; r.verificationDate = (new Date()).toISOString().split('T')[0];
+      r.verifierSignature = vSig;
+      r.status = 'Verified - Pending Approval';
+      r.updatedAt = new Date().toISOString();
+      saveLocalRequests();
+      renderAllRequests(); renderVerifierDashboard(); renderSupervisorDashboard();
+      showToast('Request berhasil diverifikasi dan dikirim ke Penanggung Jawab');
+      switchView('verifier');
+    });
 
-      const ws = XLSX.utils.aoa_to_sheet(wsData);
-      const colWidths = wsData[0].map((h,i)=>{ let max = h? String(h).length:10; for(let r=1;r<wsData.length;r++){ const v=wsData[r][i]; if(v) max=Math.max(max,String(v).length);} return {wch: Math.min(Math.max(max+2,10),60)}; });
-      ws['!cols'] = colWidths;
-      const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Permintaan_ATK');
-      const now=new Date(); const ts = now.toISOString().replace(/[:.]/g,'-'); const filename = `rekap_permintaan_atk_${ts}.xlsx`;
-      XLSX.writeFile(wb, filename);
-    }
+    document.getElementById('btnRejectVer').addEventListener('click', ()=>{
+      const reason = prompt('Masukkan alasan penolakan oleh Verifikator:');
+      if(!reason) return;
+      // require verifikator name/nip optionally
+      const vName = document.getElementById('verifierNameInput').value.trim() || 'Verifikator';
+      r.status = 'Rejected by Verifier';
+      r.rejectionReason = reason;
+      r.rejectedBy = 'Verifikator';
+      r.verifierName = vName;
+      r.verifierNIP = document.getElementById('verifierNIPInput').value.trim();
+      r.updatedAt = new Date().toISOString();
+      saveLocalRequests();
+      renderAllRequests(); renderVerifierDashboard(); renderSupervisorDashboard();
+      showToast('Request ditolak oleh verifikator');
+      switchView('verifier');
+    });
+  } else {
+    verifierSection.innerHTML = '';
+  }
 
-    // ---------- Workflow: verify / approve / reject (with signature data) ----------
-    function findRequestById(id){ return currentRequests.find(r => (r.__backendId && r.__backendId === id) || (r.documentNumber && r.documentNumber === id)); }
+  // Render supervisor section if verified pending approval
+  const supSection = document.getElementById('supervisorSection');
+  if(r.status === 'Verified - Pending Approval'){
+    supSection.innerHTML = `
+      <div class="border-t pt-6">
+        <h3 class="font-bold mb-3">Penanggung Jawab Final Approval (Step 2 of 2)</h3>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+          <div><label class="text-sm">Penanggung Jawab Name *</label><input id="supervisorNameInput" class="mt-2 w-full px-3 py-2 border rounded"></div>
+          <div><label class="text-sm">Penanggung Jawab NIP *</label><input id="supervisorNIPInput" class="mt-2 w-full px-3 py-2 border rounded"></div>
+        </div>
+        <div class="mb-4">
+          <p class="text-sm font-semibold">Tanda Tangan Penanggung Jawab</p>
+          <div class="signature-card mt-2">
+            <canvas id="supervisorSignatureCanvas" class="signature-canvas" style="height:200px;"></canvas>
+            <div class="flex gap-2 mt-2">
+              <button id="supSigClear" class="px-3 py-1 bg-red-500 text-white rounded">Clear</button>
+              <button id="supSigSave" class="px-3 py-1 bg-green-600 text-white rounded">Save Signature</button>
+            </div>
+          </div>
+        </div>
+        <div class="flex gap-3">
+          <button id="btnApproveFinal" class="px-4 py-2 bg-green-600 text-white rounded">✓ Give Final Approval</button>
+          <button id="btnRejectSup" class="px-4 py-2 bg-red-600 text-white rounded">✗ Reject Request</button>
+        </div>
+      </div>
+    `;
+    const sCanvas = document.getElementById('supervisorSignatureCanvas');
+    fitToContainer(sCanvas);
+    supervisorSigPad = new SignaturePad(sCanvas, { penColor: "rgb(0,60,0)" });
+    document.getElementById('supSigClear').addEventListener('click', ()=> supervisorSigPad && supervisorSigPad.clear());
+    document.getElementById('supSigSave').addEventListener('click', ()=>{
+      if(!supervisorSigPad || supervisorSigPad.isEmpty()){ showToast('Silakan buat tanda tangan penanggung jawab terlebih dahulu', true); return; }
+      sCanvas.dataset.dataurl = supervisorSigPad.toDataURL();
+      showToast('Tanda tangan penanggung jawab disimpan');
+    });
 
-    async function verifyRequest(){
-      const verifierNameEl=document.getElementById('verifierName'); const verifierNIPEl=document.getElementById('verifierNIP');
-      if(!verifierNameEl || !verifierNIPEl){ showToast('Form verifikator tidak ditemukan', true); return; }
-      const verifierName = verifierNameEl.value.trim(); const verifierNIP = verifierNIPEl.value.trim();
-      if(!verifierName){ showToast('Please enter verifikator name', true); return; } if(!verifierNIP){ showToast('Please enter verifikator NIP', true); return; }
-      const req = findRequestById(editingRequestId); if(!req){ showToast('Request not found', true); return; }
+    document.getElementById('btnApproveFinal').addEventListener('click', ()=>{
+      const sName = document.getElementById('supervisorNameInput').value.trim();
+      const sNip = document.getElementById('supervisorNIPInput').value.trim();
+      const sSig = sCanvas.dataset.dataurl || null;
+      if(!sName || !sNip){ showToast('Masukkan nama & NIP penanggung jawab', true); return; }
+      r.supervisorName = sName; r.supervisorNIP = sNip; r.supervisorSignature = sSig;
+      r.supervisorApprovalDate = (new Date()).toISOString().split('T')[0];
+      r.status = 'Fully Approved';
+      r.updatedAt = new Date().toISOString();
+      saveLocalRequests();
+      renderAllRequests(); renderVerifierDashboard(); renderSupervisorDashboard();
+      showToast('Request telah disetujui penuh');
+      switchView('supervisor');
+    });
 
-      // use saved verifierSignatureDataUrl if present (set during Save or auto-save)
-      const sig = document.getElementById('verifierSignatureInput') ? document.getElementById('verifierSignatureInput').value : (verifierSignatureDataUrl || '');
-      req.status='Verified - Pending Approval';
-      req.verifierName=verifierName;
-      req.verifierNIP=verifierNIP;
-      req.verificationDate=new Date().toISOString().split('T')[0];
-      req.rejectionReason='';
-      req.rejectedBy='';
-      req.signatureVerifier = sig || '';
-      req.updatedAt=new Date().toISOString();
+    document.getElementById('btnRejectSup').addEventListener('click', ()=>{
+      const reason = prompt('Masukkan alasan penolakan oleh Penanggung Jawab:');
+      if(!reason) return;
+      const sName = document.getElementById('supervisorNameInput').value.trim() || 'Penanggung Jawab';
+      r.status = 'Rejected by Supervisor';
+      r.rejectionReason = reason;
+      r.rejectedBy = 'Penanggung Jawab';
+      r.supervisorName = sName;
+      r.supervisorNIP = document.getElementById('supervisorNIPInput').value.trim();
+      r.updatedAt = new Date().toISOString();
+      saveLocalRequests();
+      renderAllRequests(); renderVerifierDashboard(); renderSupervisorDashboard();
+      showToast('Request ditolak oleh penanggung jawab');
+      switchView('supervisor');
+    });
+  } else {
+    supSection.innerHTML = '';
+  }
 
-      const sdk = ensureDataSdk();
-      if(sdk && sdk.update){ const res = await sdk.update(req); if(!(res && res.isOk)) showToast('Verified locally (SDK update failed)', true); else showToast('Request verified! Sent to Penanggung Jawab'); } else showToast('Request verified (local)');
+  // show detail view
+  switchView('detail');
+}
 
-      saveLocalRequests(); renderVerifierDashboard(); renderSupervisorDashboard(); switchView('verifier');
-    }
+/* ======= Export CSV (Excel) ======= */
+function exportRequestsToCSV(filteredList, filename){
+  // columns: DocumentNumber,Year,WorkUnit,Status,Requester,RequesterNIP,SubmissionDate,Items(composite),Verifier,Supervisor
+  const rows = [
+    ['DocumentNumber','Year','WorkUnit','Status','Requester','RequesterNIP','SubmissionDate','SubmissionLocation','Items','Verifier','VerifierNIP','VerificationDate','Supervisor','SupervisorNIP','SupervisorApprovalDate','CreatedAt','UpdatedAt']
+  ];
+  filteredList.forEach(r => {
+    const itemsText = (r.items||[]).map(it=> `${it.name} (${it.quantity} ${it.unit||''})`).join(' | ');
+    rows.push([
+      r.documentNumber, r.year, r.workUnit, r.status, r.requesterName, r.requesterNIP, r.submissionDate, r.submissionLocation,
+      itemsText, r.verifierName||'', r.verifierNIP||'', r.verificationDate||'', r.supervisorName||'', r.supervisorNIP||'', r.supervisorApprovalDate||'', r.createdAt||'', r.updatedAt||''
+    ]);
+  });
+  const csv = rows.map(r => r.map(cell => `"${String(cell||'').replace(/"/g,'""')}"`).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename || 'requests.csv';
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+}
 
-    async function approveRequestFinal(){
-      const supervisorNameEl=document.getElementById('supervisorName'); const supervisorNIPEl=document.getElementById('supervisorNIP');
-      if(!supervisorNameEl || !supervisorNIPEl){ showToast('Form penanggung jawab tidak ditemukan', true); return; }
-      const supervisorName = supervisorNameEl.value.trim(); const supervisorNIP = supervisorNIPEl.value.trim();
-      if(!supervisorName){ showToast('Please enter penanggung jawab name', true); return; } if(!supervisorNIP){ showToast('Please enter penanggung jawab NIP', true); return; }
-      const req = findRequestById(editingRequestId); if(!req){ showToast('Request not found', true); return; }
+/* ======= View switcher & initializers ======= */
+function switchView(name){
+  // hide all
+  [viewForm, viewAll, viewVerifier, viewSupervisor, viewSettings, viewDetail].forEach(v=> v.classList.add('hidden'));
+  if(name === 'form') viewForm.classList.remove('hidden');
+  else if(name === 'all') { viewAll.classList.remove('hidden'); renderAllRequests(); }
+  else if(name === 'verifier') { viewVerifier.classList.remove('hidden'); renderVerifierDashboard(); }
+  else if(name === 'supervisor') { viewSupervisor.classList.remove('hidden'); renderSupervisorDashboard(); }
+  else if(name === 'settings') { viewSettings.classList.remove('hidden'); loadSettingsForm(); }
+  else if(name === 'detail') { viewDetail.classList.remove('hidden'); }
+}
 
-      const sig = document.getElementById('supervisorSignatureInput') ? document.getElementById('supervisorSignatureInput').value : (supervisorSignatureDataUrl || '');
-      req.status='Fully Approved';
-      req.supervisorName=supervisorName;
-      req.supervisorNIP=supervisorNIP;
-      req.supervisorApprovalDate=new Date().toISOString().split('T')[0];
-      req.rejectionReason='';
-      req.rejectedBy='';
-      req.signatureSupervisor = sig || '';
-      req.updatedAt=new Date().toISOString();
+/* ======= Settings ======= */
+function loadSettingsForm(){
+  document.getElementById('settingFormTitle').value = appSettings.form_title || '';
+  document.getElementById('settingBudgetYear').value = appSettings.budget_year || '';
+  document.getElementById('settingOrgName').value = appSettings.organization_name || '';
+  document.getElementById('settingLogoUrl').value = appSettings.logo_url || '';
+}
+function applySettingsToUI(){
+  document.getElementById('uiFormTitle').textContent = appSettings.form_title;
+  document.getElementById('uiBudgetYear').textContent = 'Tahun Anggaran ' + appSettings.budget_year;
+  document.getElementById('uiOrg').textContent = appSettings.organization_name;
+  settingYear.value = appSettings.budget_year;
+  yearSelect.value = appSettings.budget_year;
+  filterYear.value = appSettings.budget_year;
+}
 
-      const sdk = ensureDataSdk();
-      if(sdk && sdk.update){ const res = await sdk.update(req); if(!(res && res.isOk)) showToast('Approved locally (SDK update failed)', true); else showToast('Request fully approved! Ready for goods release'); } else showToast('Request approved (local)');
-      saveLocalRequests(); renderVerifierDashboard(); renderSupervisorDashboard(); switchView('supervisor');
-    }
+/* ======= Init app (attach listeners) ======= */
+function init(){
+  initYearDropdowns();
 
-    // ---------- Reject modal (unchanged) ----------
-    function showRejectModal(role){
-      const modal=document.createElement('div'); modal.className='modal-backdrop';
-      modal.innerHTML = `<div class="modal-content"><h3 class="text-xl font-bold mb-3">Reject Request</h3><p class="text-gray-700 mb-3">Please provide reason for rejection:</p><textarea id="rejectionReasonInput" class="w-full p-2 border rounded mb-3" rows="4" placeholder="Enter reason..."></textarea><div class="flex gap-3 justify-end"><button id="cancelRejectBtn" class="px-4 py-2 bg-gray-500 text-white rounded">Cancel</button><button id="confirmRejectBtn" class="px-4 py-2 bg-red-600 text-white rounded">Confirm Reject</button></div></div>`;
-      document.body.appendChild(modal);
-      document.getElementById('cancelRejectBtn').addEventListener('click', ()=> modal.remove());
-      document.getElementById('confirmRejectBtn').addEventListener('click', async ()=>{
-        const reason = document.getElementById('rejectionReasonInput').value.trim(); if(!reason){ alert('Please provide rejection reason'); return; }
-        const req = findRequestById(editingRequestId); if(!req){ showToast('Request not found', true); modal.remove(); return; }
-        if(role==='verifier'){ const vname=document.getElementById('verifierName')?document.getElementById('verifierName').value.trim():''; const vnip=document.getElementById('verifierNIP')?document.getElementById('verifierNIP').value.trim():''; req.status='Rejected by Verifier'; req.verifierName=vname; req.verifierNIP=vnip; req.verificationDate=new Date().toISOString().split('T')[0]; req.rejectionReason=reason; req.rejectedBy='Verifikator'; req.updatedAt=new Date().toISOString(); }
-        else { const sname=document.getElementById('supervisorName')?document.getElementById('supervisorName').value.trim():''; const snip=document.getElementById('supervisorNIP')?document.getElementById('supervisorNIP').value.trim():''; req.status='Rejected by Supervisor'; req.supervisorName=sname; req.supervisorNIP=snip; req.supervisorApprovalDate=new Date().toISOString().split('T')[0]; req.rejectionReason=reason; req.rejectedBy='Penanggung Jawab'; req.updatedAt=new Date().toISOString(); }
-        const sdk=ensureDataSdk(); if(sdk && sdk.update){ const res=await sdk.update(req); if(!(res && res.isOk)) console.warn('reject update failed',res); }
-        saveLocalRequests(); showToast('Request rejected'); modal.remove(); renderVerifierDashboard(); renderSupervisorDashboard(); switchView(role==='verifier'?'verifier':'supervisor');
-      });
-    }
-    window.showRejectModal = showRejectModal;
+  // default values
+  document.getElementById('submissionDate').value = (new Date()).toISOString().split('T')[0];
+  addItemRow();
 
-    // ---------- Print ----------
-    window.printDocument = function(){ if(currentView !== 'detail'){ showToast('Mohon buka detail permintaan terlebih dahulu', true); return; } setTimeout(()=> window.print(), 150); };
+  // init requester signature pad
+  initRequestSignature();
 
-    // ---------- Init & wiring ----------
-    document.getElementById('newRequestBtn').addEventListener('click', ()=>{ resetForm(); switchView('form'); });
-    document.getElementById('viewRequestsBtn').addEventListener('click', ()=> switchView('requests'));
-    document.getElementById('verifierViewBtn').addEventListener('click', ()=> switchView('verifier'));
-    document.getElementById('supervisorViewBtn').addEventListener('click', ()=> switchView('supervisor'));
-    document.getElementById('settingsBtn').addEventListener('click', ()=> switchView('settings'));
-    document.getElementById('exportExcelBtnTop').addEventListener('click', ()=> exportAllRequestsToXLSXFiltered());
+  // buttons
+  document.getElementById('btnNew').addEventListener('click', ()=> switchView('form'));
+  document.getElementById('btnAll').addEventListener('click', ()=> switchView('all'));
+  document.getElementById('btnVerifier').addEventListener('click', ()=> switchView('verifier'));
+  document.getElementById('btnSupervisor').addEventListener('click', ()=> switchView('supervisor'));
+  document.getElementById('btnSettings').addEventListener('click', ()=> switchView('settings'));
 
-    function switchView(view){
-      currentView = view;
-      ['requestFormView','allRequestsView','verifierView','supervisorView','requestDetailView','settingsView'].forEach(id=>{ const el=document.getElementById(id); if(!el) return; el.classList.add('hidden'); });
-      if(view==='form') document.getElementById('requestFormView').classList.remove('hidden');
-      else if(view==='requests'){ document.getElementById('allRequestsView').classList.remove('hidden'); renderAllRequestsFiltered(); }
-      else if(view==='verifier'){ document.getElementById('verifierView').classList.remove('hidden'); renderVerifierDashboard(); }
-      else if(view==='supervisor'){ document.getElementById('supervisorView').classList.remove('hidden'); renderSupervisorDashboard(); }
-      else if(view==='detail') document.getElementById('requestDetailView').classList.remove('hidden');
-      else if(view==='settings'){ document.getElementById('settingsView').classList.remove('hidden'); loadSettingsForm(); }
-    }
-    window.switchView = switchView;
+  document.getElementById('btnAddItem').addEventListener('click', ()=> addItemRow());
 
-    // Filters
-    populateFilters();
-    document.getElementById('filterMonth').addEventListener('change', ()=> renderAllRequestsFiltered());
-    document.getElementById('filterYear').addEventListener('change', ()=> renderAllRequestsFiltered());
-    document.getElementById('exportFilteredBtn').addEventListener('click', ()=> exportAllRequestsToXLSXFiltered());
+  document.getElementById('reqSigClear').addEventListener('click', ()=> clearRequesterSig());
+  document.getElementById('reqSigSave').addEventListener('click', ()=> saveRequesterSig());
 
-    // load local data first, then try adapter init
-    loadLocalRequests();
-    const sdk = ensureDataSdk();
-    if(sdk && sdk.init){
-      sdk.init({
-        onDataChanged(data){
-          if(Array.isArray(data)){
-            const settingsRecords = data.filter(r=>r.recordType==='settings');
-            appSettings = settingsRecords.length>0 ? settingsRecords[0] : appSettings;
-            currentRequests = data;
-            saveLocalRequests();
-            applySettingsToUI();
-            if(currentView==='requests') renderAllRequestsFiltered();
-            if(currentView==='verifier') renderVerifierDashboard();
-            if(currentView==='supervisor') renderSupervisorDashboard();
-            if(currentView==='form') updateDocumentNumber();
-          }
-        }
-      }).then(res=>{ if(res && res.isOk) console.log('dataSdk initialized (adapter)'); }).catch(e=>console.warn('adapter init error', e));
-    }
+  document.getElementById('submitRequestBtn').addEventListener('click', submitRequest);
 
-    // final render
-    renderFormView();
+  // settings save
+  document.getElementById('saveSettingsBtn').addEventListener('click', ()=>{
+    const f = document.getElementById('settingFormTitle').value.trim();
+    const y = document.getElementById('settingBudgetYear').value.trim();
+    const o = document.getElementById('settingOrgName').value.trim();
+    const logo = document.getElementById('settingLogoUrl').value.trim();
+    if(!f || !y || !o){ showToast('Mohon isi semua pengaturan utama', true); return; }
+    appSettings.form_title = f; appSettings.budget_year = y; appSettings.organization_name = o; appSettings.logo_url = logo;
+    saveSettings(appSettings);
     applySettingsToUI();
-    renderVerifierDashboard();
-    renderSupervisorDashboard();
-  }); // DOMContentLoaded end
-  </script>
+    showToast('Settings disimpan');
+    switchView('form');
+  });
+  document.getElementById('cancelSettingsBtn').addEventListener('click', ()=> switchView('form'));
+
+  // filters & exports
+  document.getElementById('filterMonth').addEventListener('change', ()=> renderAllRequests());
+  document.getElementById('filterYear').addEventListener('change', ()=> renderAllRequests());
+  document.getElementById('btnExportFiltered').addEventListener('click', ()=>{
+    const month = document.getElementById('filterMonth').value;
+    const year = document.getElementById('filterYear').value;
+    const filtered = currentRequests.filter(r=>{
+      if(r.recordType !== 'request') return false;
+      if(!month && !year) return true;
+      const parts = (r.documentNumber||'').split('/');
+      const m = parts[2]||''; const y = parts[3]||'';
+      if(month && year) return m===month && y===year;
+      if(month) return m===month;
+      if(year) return y===year;
+      return true;
+    });
+    exportRequestsToCSV(filtered, `requests_${month||'all'}_${year||'all'}.csv`);
+  });
+
+  // top export all (without filter)
+  document.getElementById('btnExportAll').addEventListener('click', ()=>{
+    exportRequestsToCSV(currentRequests.filter(r=>r.recordType==='request'), `requests_all.csv`);
+  });
+
+  // load settings and apply
+  applySettingsToUI();
+
+  // render initial views
+  renderAllRequests();
+  renderVerifierDashboard();
+  renderSupervisorDashboard();
+}
+
+/* ======= Kick off ======= */
+init();
+switchView('form'); // open form by default
+
+// Expose some functions for inline onclick handlers
+window.viewRequestDetail = viewRequestDetail;
+window.deleteRequest = deleteRequest;
+window.openWhatsAppFor = openWhatsAppFor;
+</script>
+
 </body>
 </html>
