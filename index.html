@@ -1,47 +1,43 @@
 <!doctype html>
 <html lang="id">
- <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>ATK Request Form - BPS South Jakarta</title>
-  <!-- IMPORTANT: set base to your GitHub Pages subpath. Change '/buildp/' to your repo path if different. -->
+
+  <!-- GHPAGES base: sesuaikan jika repo-nya di subpath -->
   <base href="/buildp/">
 
-  <!-- Load external libs early -->
+  <!-- Tailwind CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- Google API must load before any code that calls gapi / Google Sheets -->
+
+  <!-- Google API (loaded before adapter) -->
   <script src="https://apis.google.com/js/api.js"></script>
 
-  <!-- Local SDKs and adapters (use relative paths, NO leading slash) -->
-  <!-- Make sure these files exist in your repo at the paths below. -->
-  <script src="_sdk/data_sdk.js"></script>
-  <script src="_sdk/element_sdk.js"></script>
-  <!-- Optional adapter file if you split adapter code into separate JS (recommended) -->
+  <!-- Local adapter (relative path) -->
   <script src="dataAdapter-google-sheets.js"></script>
 
   <style>
-    /* minimal local styles retained from previous version */
     body { box-sizing: border-box; }
+    .no-print { }
     @media print { .no-print { display:none!important } }
-    .toast{position:fixed;top:20px;right:20px;background:#10b981;color:#fff;padding:16px 24px;border-radius:8px;z-index:1000}
+    .toast{position:fixed;top:20px;right:20px;background:#10b981;color:#fff;padding:12px 18px;border-radius:8px;z-index:1000}
     .toast.error{background:#ef4444}
-    .modal-backdrop{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:999}
-    .modal-content{background:#fff;border-radius:12px;padding:24px;max-width:500px;width:90%}
+    .modal-backdrop{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:999}
+    .modal-content{background:#fff;border-radius:12px;padding:24px;max-width:600px;width:92%}
     .digital-signature{border:2px solid #10b981;background:#f0fdf4;padding:16px;border-radius:8px;font-family:'Courier New',monospace}
   </style>
- </head>
- <body class="bg-gray-50 min-h-full">
+</head>
+<body class="bg-gray-50 min-h-full">
   <div id="app" class="max-w-6xl mx-auto p-4 md:p-8"></div>
 
-  <!-- MAIN APP SCRIPT: kept inline for simplicity; ensure it's executed after gapi and SDK files loaded -->
   <script>
-  document.addEventListener('DOMContentLoaded', function() {
-    // All DOM references and event listeners will be attached after DOM is ready.
-
-    // --- Configuration defaults (you can override from settings saved in Sheet) ---
+  // ---------- MAIN APP (UI + logic) ----------
+  document.addEventListener('DOMContentLoaded', () => {
+    // Default config (fallback)
     const defaultConfig = {
       form_title: "Form Permintaan ATK",
-      budget_year: "2025",
+      budget_year: (new Date()).getFullYear().toString(),
       organization_name: "BPS Kota Jakarta Selatan",
       logo_url: "https://upload.wikimedia.org/wikipedia/commons/thumb/2/28/Lambang_Badan_Pusat_Statistik_%28BPS%29_Indonesia.svg/1160px-Lambang_Badan_Pusat_Statistik_%28BPS%29_Indonesia.svg.png",
       doc_number_format: "0001",
@@ -49,7 +45,30 @@
       submit_button_text: "Kirim Permintaan"
     };
 
-    // --- Minimal DOM builder: inject full HTML UI into #app (keeps index.html tidy) ---
+    // App state
+    let appSettings = null;         // will be loaded from sheet (settings record) or localStorage fallback
+    let currentRequests = [];       // will be loaded from sheet
+    let currentView = 'form';
+    let editingRequestId = null;
+
+    // Utility: toast
+    function showToast(msg, isError=false){
+      const t=document.createElement('div'); t.className='toast' + (isError? ' error':'' ); t.textContent=msg; document.body.appendChild(t);
+      setTimeout(()=>t.remove(),3500);
+    }
+
+    function formatDate(dateString){
+      if(!dateString) return '-';
+      const d=new Date(dateString);
+      const months=['January','February','March','April','May','June','July','August','September','October','November','December'];
+      return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
+    }
+    function formatTimestamp(iso){ if(!iso) return '-'; const d=new Date(iso); return d.toLocaleString('en-US',{year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}); }
+
+    // Data SDK must be provided by dataAdapter-google-sheets.js as window.dataSdk
+    function ensureDataSdk(){ return window.dataSdk || null; }
+
+    // ------------------ BUILD UI ------------------
     const app = document.getElementById('app');
     app.innerHTML = `
       <div class="no-print mb-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
@@ -60,188 +79,533 @@
         <button id="settingsBtn" class="px-4 py-3 bg-gray-700 text-white rounded-lg">⚙️ Pengaturan</button>
       </div>
 
-      <!-- Container placeholders -->
       <div id="requestFormView" class="bg-white rounded-lg shadow-lg p-6 md:p-8 print-section"></div>
-      <div id="allRequestsView" class="hidden"><div class="bg-white rounded-lg shadow-lg p-6"><h2 class="text-2xl font-bold">Semua Permintaan ATK</h2><div id="allRequestsList"></div></div></div>
-      <div id="verifierView" class="hidden"><div class="bg-white rounded-lg shadow-lg p-6"><h2 class="text-2xl font-bold">Dashboard Verifikator</h2><div id="verifierRequestsList"></div></div></div>
-      <div id="supervisorView" class="hidden"><div class="bg-white rounded-lg shadow-lg p-6"><h2 class="text-2xl font-bold">Dashboard Penanggung Jawab</h2><div id="supervisorRequestsList"></div></div></div>
+      <div id="allRequestsView" class="hidden"><div class="bg-white rounded-lg shadow-lg p-6"><h2 class="text-2xl font-bold">Semua Permintaan ATK</h2><div id="allRequestsList" class="space-y-4 mt-4"></div></div></div>
+      <div id="verifierView" class="hidden"><div class="bg-white rounded-lg shadow-lg p-6"><h2 class="text-2xl font-bold">Dashboard Verifikator</h2><div id="verifierRequestsList" class="space-y-4 mt-4"></div></div></div>
+      <div id="supervisorView" class="hidden"><div class="bg-white rounded-lg shadow-lg p-6"><h2 class="text-2xl font-bold">Dashboard Penanggung Jawab</h2><div id="supervisorRequestsList" class="space-y-4 mt-4"></div></div></div>
       <div id="requestDetailView" class="hidden bg-white rounded-lg shadow-lg p-6 md:p-8 print-section"></div>
       <div id="settingsView" class="hidden bg-white rounded-lg shadow-lg p-6 md:p-8"></div>
     `;
 
-    // --- Minimal helper functions (toastr, format, etc) ---
-    function showToast(message, isError = false){
-      const t = document.createElement('div');
-      t.className = 'toast ' + (isError? 'error':'');
-      t.textContent = message;
-      document.body.appendChild(t);
-      setTimeout(()=>t.remove(), 3000);
-    }
-
-    function formatDate(dateString){ if(!dateString) return '-'; const d=new Date(dateString); const months=['January','February','March','April','May','June','July','August','September','October','November','December']; return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}` }
-    function formatTimestamp(iso){ if(!iso) return '-'; const d=new Date(iso); return d.toLocaleString('en-US',{year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}); }
-
-    // --- App state ---
-    let currentRequests = [];
-    let appSettings = null;
-    let currentView = 'form';
-    let editingRequestId = null;
-
-    // --- Utility: safe access to window.dataSdk ---
-    function ensureDataSdk(){
-      if(!window.dataSdk) console.warn('window.dataSdk not found — make sure _sdk/data_sdk.js is loaded and defines window.dataSdk');
-      return window.dataSdk || null;
-    }
-
-    // --- Build / Render Form View (simplified UI to keep code compact) ---
+    // ------------------ Form renderer ------------------
     function renderFormView(){
-      const v = document.getElementById('requestFormView');
       const settings = getCurrentSettings();
+      const v = document.getElementById('requestFormView');
       v.innerHTML = `
         <div class="mb-8 border-b-2 border-gray-800 pb-6">
           <div class="flex items-center justify-center gap-6">
             <div class="flex-shrink-0 logo-container">${getLogoHTML(settings.logo_url)}</div>
             <div class="text-center flex-grow">
-              <h1 id="formTitle" class="text-3xl font-bold text-gray-800 mb-2">${settings.form_title}</h1>
-              <p id="budgetYear" class="text-gray-700 text-lg mb-1">Tahun Anggaran ${settings.budget_year}</p>
-              <p id="organizationName" class="text-gray-600">${settings.organization_name}</p>
+              <h1 id="formTitle" class="text-3xl font-bold text-gray-800 mb-2">${escapeHtml(settings.form_title)}</h1>
+              <p id="budgetYear" class="text-gray-700 text-lg mb-1">Tahun Anggaran ${escapeHtml(settings.budget_year)}</p>
+              <p id="organizationName" class="text-gray-600">${escapeHtml(settings.organization_name)}</p>
             </div>
             <div class="flex-shrink-0 w-20"></div>
           </div>
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-          <div><label>No Dokumen</label><input id="documentNumber" readonly class="w-full px-4 py-2 border rounded bg-gray-100"></div>
-          <div><label>Tahun</label><select id="yearSelect" class="w-full px-4 py-2 border rounded"></select></div>
-          <div><label>Bagian/Fungsi</label><select id="workUnitSelect" class="w-full px-4 py-2 border rounded"><option value="">Pilih Bagian/Fungsi</option><option>Subbagian Umum</option></select></div>
+          <div><label class="block text-sm font-semibold">No Dokumen</label><input id="documentNumber" readonly class="w-full px-4 py-2 border rounded bg-gray-100"></div>
+          <div><label class="block text-sm font-semibold">Tahun</label><select id="yearSelect" class="w-full px-4 py-2 border rounded"></select></div>
+          <div><label class="block text-sm font-semibold">Bagian/Fungsi</label><select id="workUnitSelect" class="w-full px-4 py-2 border rounded"><option value=''>Pilih Bagian/Fungsi</option><option value='Subbagian Umum'>Subbagian Umum</option></select></div>
         </div>
 
         <div class="mb-6">
-          <div class="flex justify-between items-center mb-4"><h2 class="text-xl font-bold">Rincian ATK</h2><button id="addRowBtn" class="px-4 py-2 bg-green-600 text-white rounded">+ Tambah Item</button></div>
+          <div class="flex justify-between items-center mb-4">
+            <h2 class="text-xl font-bold">Rincian ATK</h2>
+            <button id="addRowBtn" class="no-print px-4 py-2 bg-green-600 text-white rounded-lg">+ Tambah Item</button>
+          </div>
           <div class="overflow-x-auto">
-            <table class="w-full border-collapse border border-gray-300"><thead><tr><th>No</th><th>Nama Item</th><th>Jumlah</th><th>Satuan</th><th class="no-print">Aksi</th></tr></thead><tbody id="itemsTableBody"></tbody></table>
+            <table class="w-full border-collapse border border-gray-300">
+              <thead><tr class="bg-gray-100"><th class="px-4 py-3 w-12">No</th><th class="px-4 py-3">Nama Item</th><th class="px-4 py-3 w-32">Jumlah</th><th class="px-4 py-3">Satuan</th><th class="px-4 py-3 w-24 no-print">Aksi</th></tr></thead>
+              <tbody id="itemsTableBody"></tbody>
+            </table>
           </div>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6"><div><label>Lokasi Pengajuan</label><input id="submissionLocation" class="w-full px-4 py-2 border rounded" value="Jakarta"></div><div><label>Tanggal Pengajuan</label><input id="submissionDate" type="date" class="w-full px-4 py-2 border rounded"></div></div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+          <div><label class="block text-sm font-semibold">Lokasi Pengajuan</label><input id="submissionLocation" class="w-full px-4 py-2 border rounded" value="Jakarta"></div>
+          <div><label class="block text-sm font-semibold">Tanggal Pengajuan</label><input id="submissionDate" type="date" class="w-full px-4 py-2 border rounded"></div>
+        </div>
 
-        <div class="border-t-2 border-gray-200 pt-6 mb-6"><h2 class="text-xl font-bold">Informasi Pemohon</h2>
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4"><div><label>Nama</label><input id="requesterName" class="w-full px-4 py-2 border rounded"></div><div><label>NIP</label><input id="requesterNIP" class="w-full px-4 py-2 border rounded"></div></div>
-          <div class="mb-4 p-4 bg-blue-50 border rounded"><p><strong>ℹ️ Tanda Tangan Digital:</strong> Permintaan Anda akan ditandatangani secara digital.</p></div>
-          <button id="submitRequestBtn" class="w-full px-6 py-3 bg-blue-600 text-white rounded font-bold">${settings.submit_button_text}</button>
+        <div class="border-t-2 border-gray-200 pt-6 mb-6">
+          <h2 class="text-xl font-bold mb-4">Informasi Pemohon</h2>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            <div><label class="block text-sm font-semibold">Nama</label><input id="requesterName" class="w-full px-4 py-2 border rounded"></div>
+            <div><label class="block text-sm font-semibold">NIP</label><input id="requesterNIP" class="w-full px-4 py-2 border rounded" placeholder="contoh: 199012345678901234"></div>
+          </div>
+          <div class="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg"><p class="text-sm text-blue-800"><strong>ℹ️ Tanda Tangan Digital:</strong> Permintaan Anda akan ditandatangani secara digital.</p></div>
+          <button id="submitRequestBtn" class="no-print w-full px-6 py-3 bg-blue-600 text-white rounded-lg font-bold text-lg">${escapeHtml(settings.submit_button_text)}</button>
         </div>
       `;
 
-      initYearDropdown(); initSubmissionDate(); updateDocumentNumber(); addItemRow();
+      initYearDropdown();
+      initSubmissionDate();
+      updateDocumentNumber();
+      addItemRow();
 
       document.getElementById('addRowBtn').addEventListener('click', addItemRow);
       document.getElementById('submitRequestBtn').addEventListener('click', submitRequest);
     }
 
-    function initYearDropdown(){ const sel = document.getElementById('yearSelect'); sel.innerHTML=''; const currentYear=(new Date()).getFullYear(); for(let i=currentYear-5;i<=currentYear+5;i++){ const o=document.createElement('option'); o.value=i; o.textContent=i; if(i===currentYear) o.selected=true; sel.appendChild(o);} }
+    // ------------------ helper & form functions ------------------
+    function escapeHtml(s){ if(!s) return ''; return String(s).replace(/[&<>"']/g, (m)=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'})[m]);}
+
+    function initYearDropdown(){
+      const sel=document.getElementById('yearSelect');
+      sel.innerHTML='';
+      const currentYear=(new Date()).getFullYear();
+      for(let i=currentYear-5;i<=currentYear+5;i++){
+        const o=document.createElement('option'); o.value=i; o.textContent=i; if(i===currentYear) o.selected=true; sel.appendChild(o);
+      }
+    }
     function initSubmissionDate(){ const d=document.getElementById('submissionDate'); d.value=(new Date()).toISOString().split('T')[0]; }
 
-    function addItemRow(){ const tbody=document.getElementById('itemsTableBody'); const row=document.createElement('tr'); const idx=tbody.children.length+1; row.innerHTML=`<td class="text-center">${idx}</td><td><input class="item-name w-full" placeholder="Nama item"></td><td><input type="number" class="item-quantity w-full" min="1" value="1"></td><td><input class="item-notes w-full" placeholder="Satuan"></td><td class="no-print"><button class="delete-row-btn bg-red-500 text-white px-3 py-1 rounded">Hapus</button></td>`; tbody.appendChild(row); row.querySelector('.delete-row-btn').addEventListener('click', ()=>{row.remove(); updateRowNumbers();}); }
-    function updateRowNumbers(){ const tbody=document.getElementById('itemsTableBody'); Array.from(tbody.children).forEach((r,i)=>r.children[0].textContent=i+1); }
-    function getItemsFromTable(){ const tbody=document.getElementById('itemsTableBody'); const items=[]; Array.from(tbody.children).forEach(row=>{ const name=row.querySelector('.item-name').value.trim(); const quantity=parseInt(row.querySelector('.item-quantity').value)||0; const notes=row.querySelector('.item-notes').value.trim(); if(name && quantity>0) items.push({name,quantity,notes}); }); return items; }
+    function addItemRow(){
+      const tbody=document.getElementById('itemsTableBody');
+      const row=document.createElement('tr');
+      const idx=tbody.children.length+1;
+      row.innerHTML=`
+        <td class="border px-4 py-2 text-center">${idx}</td>
+        <td class="border px-4 py-2"><input type="text" class="item-name w-full px-2 py-1 border rounded" placeholder="Masukkan nama item"></td>
+        <td class="border px-4 py-2"><input type="number" class="item-quantity w-full px-2 py-1 border rounded" min="1" value="1"></td>
+        <td class="border px-4 py-2"><input type="text" class="item-notes w-full px-2 py-1 border rounded" placeholder="Satuan (contoh: pcs)"></td>
+        <td class="border px-4 py-2 text-center no-print"><button class="delete-row-btn px-3 py-1 bg-red-500 text-white rounded">Hapus</button></td>
+      `;
+      tbody.appendChild(row);
+      row.querySelector('.delete-row-btn').addEventListener('click', ()=>{
+        row.remove();
+        updateRowNumbers();
+      });
+    }
+    function updateRowNumbers(){ const tbody=document.getElementById('itemsTableBody'); Array.from(tbody.children).forEach((r,i)=> r.children[0].textContent=i+1); }
+    function getItemsFromTable(){ const tbody=document.getElementById('itemsTableBody'); const items=[]; Array.from(tbody.children).forEach(row=>{ const name=row.querySelector('.item-name').value.trim(); const qty=parseInt(row.querySelector('.item-quantity').value) || 0; const notes=row.querySelector('.item-notes').value.trim(); if(name && qty>0) items.push({name,quantity:qty,notes}); }); return items; }
 
     // Document number generator
-    function updateDocumentNumber(){ const input=document.getElementById('documentNumber'); if(input) input.value=generateDocumentNumber(); }
-    function generateDocumentNumber(){ const year=document.getElementById('yearSelect').value; const submissionDate=document.getElementById('submissionDate').value; const settings=getCurrentSettings(); const prefix=settings.doc_number_format||defaultConfig.doc_number_format; let month='01'; if(submissionDate){ const d=new Date(submissionDate); month=(d.getMonth()+1).toString().padStart(2,'0'); } const existingNumbers=currentRequests.filter(r=>r.recordType==='request').filter(r=>{ const parts=(r.documentNumber||'').split('/'); return parts.length===4 && parts[2]===month && parts[3]===year; }).map(r=>parseInt((r.documentNumber||'').split('/')[0])||0); const nextNumber=existingNumbers.length>0?Math.max(...existingNumbers)+1:parseInt(prefix)||1; const padded=nextNumber.toString().padStart(4,'0'); return `${padded}/ATK/${month}/${year}`; }
-
-    // Validation & submit
-    function validateForm(){ const year=document.getElementById('yearSelect').value; const workUnit=document.getElementById('workUnitSelect').value; const items=getItemsFromTable(); const requesterName=document.getElementById('requesterName').value.trim(); const requesterNIP=document.getElementById('requesterNIP').value.trim(); if(!year){ showToast('Mohon pilih tahun',true); return false;} if(!workUnit){ showToast('Mohon pilih bagian/fungsi',true); return false;} if(items.length===0){ showToast('Mohon tambahkan minimal satu item',true); return false;} if(!requesterName){ showToast('Mohon isi nama pemohon',true); return false;} if(!requesterNIP){ showToast('Mohon isi NIP pemohon',true); return false;} return true; }
-
-    async function submitRequest(){ if(!validateForm()) return; const submitBtn=document.getElementById('submitRequestBtn'); submitBtn.disabled=true; submitBtn.textContent='Mengirim...'; try{ const documentNumber=generateDocumentNumber(); const year=document.getElementById('yearSelect').value; const workUnit=document.getElementById('workUnitSelect').value; const items=getItemsFromTable(); const submissionDate=document.getElementById('submissionDate').value; const submissionLocation=document.getElementById('submissionLocation').value.trim(); const requesterName=document.getElementById('requesterName').value.trim(); const requesterNIP=document.getElementById('requesterNIP').value.trim(); const requestData={ recordType:'request', documentNumber, year, workUnit, items:JSON.stringify(items), submissionDate, submissionLocation, requesterName, requesterNIP, status:'Pending Verification', verifierName:'', verifierNIP:'', verificationDate:'', supervisorName:'', supervisorNIP:'', supervisorApprovalDate:'', rejectionReason:'', rejectedBy:'', createdAt:new Date().toISOString(), updatedAt:new Date().toISOString() };
-        const sdk=ensureDataSdk();
-        if(sdk && sdk.create){
-          const result=await sdk.create(requestData);
-          if(result && result.isOk){ showToast('Permintaan berhasil dikirim!'); resetForm(); } else { console.error('create error', result); showToast('Gagal mengirim: '+(result && result.error && result.error.message? result.error.message:'Unknown'), true); }
-        } else {
-          // If dataSdk not present, fallback to storing in-memory for local demo
-          requestData.__backendId = 'local-' + Math.random().toString(36).slice(2,9);
-          currentRequests.push(requestData);
-          showToast('Permintaan disimpan lokal (SDK tidak ditemukan).');
-          resetForm();
-        }
-    }catch(e){ console.error(e); showToast('Gagal mengirim: '+e.message,true);} finally{ submitBtn.disabled=false; submitBtn.textContent=getCurrentSettings().submit_button_text; }
+    function updateDocumentNumber(){ const el=document.getElementById('documentNumber'); if(el) el.value = generateDocumentNumber(); }
+    function generateDocumentNumber(){
+      const year=document.getElementById('yearSelect').value;
+      const submissionDate=document.getElementById('submissionDate').value;
+      const settings = getCurrentSettings();
+      const prefix = settings.doc_number_format || defaultConfig.doc_number_format;
+      let month = '01';
+      if(submissionDate){ const d=new Date(submissionDate); month=(d.getMonth()+1).toString().padStart(2,'0'); }
+      const existingNumbers = (currentRequests||[]).filter(r=>r.recordType==='request').filter(r=>{
+        const parts=(r.documentNumber||'').split('/');
+        return parts.length===4 && parts[2]===month && parts[3]===year;
+      }).map(r=>{ const parts=(r.documentNumber||'').split('/'); return parseInt(parts[0])||0; });
+      const nextNumber = existingNumbers.length>0? Math.max(...existingNumbers)+1 : parseInt(prefix) || 1;
+      const padded = nextNumber.toString().padStart(4,'0');
+      return `${padded}/ATK/${month}/${year}`;
     }
 
-    function resetForm(){ document.getElementById('workUnitSelect').value=''; document.getElementById('itemsTableBody').innerHTML=''; document.getElementById('requesterName').value=''; document.getElementById('requesterNIP').value=''; initSubmissionDate(); updateDocumentNumber(); addItemRow(); }
+    // Validate & submit
+    function validateForm(){
+      const year=document.getElementById('yearSelect').value;
+      const workUnit=document.getElementById('workUnitSelect').value;
+      const items=getItemsFromTable();
+      const requesterName=document.getElementById('requesterName').value.trim();
+      const requesterNIP=document.getElementById('requesterNIP').value.trim();
+      if(!year){ showToast('Mohon pilih tahun', true); return false; }
+      if(!workUnit){ showToast('Mohon pilih bagian/fungsi', true); return false; }
+      if(items.length===0){ showToast('Mohon tambahkan minimal satu item', true); return false; }
+      if(!requesterName){ showToast('Mohon isi nama pemohon', true); return false; }
+      if(!requesterNIP){ showToast('Mohon isi NIP pemohon', true); return false; }
+      return true;
+    }
 
-    // --- Simple settings / UI binding ---
-    function getCurrentSettings(){ if(appSettings){ return { form_title: appSettings.form_title || defaultConfig.form_title, budget_year: appSettings.budget_year || defaultConfig.budget_year, organization_name: appSettings.organization_name || defaultConfig.organization_name, doc_number_format: appSettings.doc_number_format || defaultConfig.doc_number_format, logo_url: appSettings.logo_url || defaultConfig.logo_url, whatsapp_number: appSettings.whatsapp_number || defaultConfig.whatsapp_number, submit_button_text: appSettings.submit_button_text || defaultConfig.submit_button_text } } return defaultConfig; }
+    async function submitRequest(){
+      if(!validateForm()) return;
+      const btn=document.getElementById('submitRequestBtn');
+      btn.disabled=true; btn.textContent='Mengirim...';
+      try{
+        const documentNumber = generateDocumentNumber();
+        const year=document.getElementById('yearSelect').value;
+        const workUnit=document.getElementById('workUnitSelect').value;
+        const items=getItemsFromTable();
+        const submissionDate=document.getElementById('submissionDate').value;
+        const submissionLocation=document.getElementById('submissionLocation').value.trim();
+        const requesterName=document.getElementById('requesterName').value.trim();
+        const requesterNIP=document.getElementById('requesterNIP').value.trim();
 
-    function applySettingsToUI(){ const s=getCurrentSettings(); const logoContainers=document.querySelectorAll('.logo-container'); logoContainers.forEach(c=>c.innerHTML=getLogoHTML(s.logo_url)); const submitBtn=document.getElementById('submitRequestBtn'); if(submitBtn) submitBtn.textContent=s.submit_button_text; }
-    function getLogoHTML(logoUrl){ if(logoUrl && logoUrl.trim()!=='') { return `<img src="${logoUrl}" alt="Logo" class="w-20 h-20 object-contain" onerror="this.style.display='none'">`; } return `<svg width="80" height="80" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><path d="M50 5 L85 20 L85 50 Q85 75 50 95 Q15 75 15 50 L15 20 Z" fill="#1e40af" stroke="#1e3a8a" stroke-width="2"/><path d="M50 15 L75 25 L75 50 Q75 70 50 85 Q25 70 25 50 L25 25 Z" fill="#3b82f6"/><text x="50" y="45" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="white" text-anchor="middle">BPS</text></svg>`; }
+        const record = {
+          recordType: 'request',
+          documentNumber,
+          year,
+          workUnit,
+          items: JSON.stringify(items),
+          submissionDate,
+          submissionLocation,
+          requesterName,
+          requesterNIP,
+          status: 'Pending Verification',
+          verifierName: '',
+          verifierNIP: '',
+          verificationDate: '',
+          supervisorName: '',
+          supervisorNIP: '',
+          supervisorApprovalDate: '',
+          rejectionReason: '',
+          rejectedBy: '',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
 
-    // --- Minimal render list / detail to show stored data (works with in-memory and with SDK updates via dataHandler) ---
-    function renderAllRequests(){ const container=document.getElementById('allRequestsList'); const requests=currentRequests.filter(r=>r.recordType==='request'); if(requests.length===0){ container.innerHTML='<p class="text-gray-500">Belum ada permintaan</p>'; return; } const sorted=[...requests].sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt)); container.innerHTML = sorted.map(r=>{ const settings=getCurrentSettings(); const hasWhats = settings.whatsapp_number && settings.whatsapp_number.trim()!==''; return `<div class="border p-4 rounded mb-4"><div class="flex justify-between"><div onclick="window.viewRequestDetail('${r.__backendId || r.documentNumber}')" style="cursor:pointer"><h3 class="font-bold">${r.documentNumber}</h3><p class="text-sm">${r.workUnit} - ${r.year}</p></div><div class="flex gap-2"> <span class="px-3 py-1 rounded-full ${getStatusColor(r.status)}">${r.status}</span> ${ hasWhats? `<button class="px-3 py-1 bg-green-500 text-white rounded">📱 Buka WA</button>`: '' } <button class="px-3 py-1 bg-red-500 text-white rounded">🗑️ Hapus</button></div></div></div>`; }).join(''); }
+        const sdk = ensureDataSdk();
+        if(sdk && sdk.create){
+          const res = await sdk.create(record);
+          if(res && res.isOk){ showToast('Permintaan berhasil dikirim dan tersimpan!'); resetForm(); }
+          else { console.error('create failed', res); showToast('Gagal menyimpan: ' + (res && res.error && res.error.message ? res.error.message : 'Unknown'), true); }
+        } else {
+          // fallback local
+          record.__backendId = 'local-'+Math.random().toString(36).slice(2,9);
+          currentRequests.push(record);
+          showToast('Disimpan lokal (SDK belum terhubung).');
+          resetForm();
+        }
+      }catch(e){ console.error(e); showToast('Gagal mengirim: '+e.message,true); }
+      finally{ btn.disabled=false; btn.textContent=getCurrentSettings().submit_button_text; }
+    }
 
-    // small helper for status color classes
-    function getStatusColor(status){ switch(status){ case 'Pending Verification': return 'bg-yellow-200 text-yellow-800'; case 'Verified - Pending Approval': return 'bg-blue-200 text-blue-800'; case 'Fully Approved': return 'bg-green-200 text-green-800'; case 'Rejected by Verifier': case 'Rejected by Supervisor': return 'bg-red-200 text-red-800'; default: return 'bg-gray-200 text-gray-800'; } }
+    function resetForm(){
+      document.getElementById('workUnitSelect').value='';
+      document.getElementById('itemsTableBody').innerHTML='';
+      document.getElementById('requesterName').value='';
+      document.getElementById('requesterNIP').value='';
+      initSubmissionDate(); updateDocumentNumber(); addItemRow();
+    }
 
-    // --- Expose small API for view detail (rudimentary) ---
-    window.viewRequestDetail = function(id){ const request = currentRequests.find(r=> (r.__backendId===id) || (r.documentNumber===id) ); if(!request) { showToast('Request not found', true); return; } editingRequestId = request.__backendId || request.documentNumber; const dv=document.getElementById('requestDetailView'); dv.innerHTML = `
-      <div class="no-print mb-4"><button onclick="window.switchView('requests')" class="px-4 py-2 bg-gray-500 text-white rounded">← Back</button></div>
-      <div class="mb-8 border-b-2 border-gray-800 pb-6"><div class="flex items-center gap-6">${getLogoHTML(getCurrentSettings().logo_url)}<div><h1 class="text-3xl font-bold">${getCurrentSettings().form_title}</h1><p>Tahun Anggaran ${getCurrentSettings().budget_year}</p><p>${getCurrentSettings().organization_name}</p></div></div></div>
-      <div><p><strong>Document Number</strong> ${request.documentNumber}</p><p><strong>Submission:</strong> ${request.submissionLocation}, ${formatDate(request.submissionDate)}</p><p><strong>Status:</strong> <span class="px-3 py-1 rounded-full ${getStatusColor(request.status)}">${request.status}</span></p></div>
-      <div class="mb-6"><h2 class="font-bold">ATK Items</h2><table class="w-full border"><thead><tr><th>No</th><th>Item</th><th>Qty</th><th>Notes</th></tr></thead><tbody>${JSON.parse(request.items).map((it,idx)=>`<tr><td>${idx+1}</td><td>${it.name}</td><td>${it.quantity}</td><td>${it.notes||'-'}</td></tr>`).join('')}</tbody></table></div>
-      <div class="digital-signature"><p>✓ DIGITALLY SIGNED</p><p>Signed by: ${request.requesterName}</p><p>NIP: ${request.requesterNIP}</p><p>Date: ${formatDate(request.submissionDate)}</p><p>Timestamp: ${formatTimestamp(request.createdAt)}</p></div>
-    `; window.switchView('detail'); };
+    // ------------------ Settings UI + save ------------------
+    function getCurrentSettings(){
+      if(appSettings){
+        return {
+          form_title: appSettings.form_title || defaultConfig.form_title,
+          budget_year: appSettings.budget_year || defaultConfig.budget_year,
+          organization_name: appSettings.organization_name || defaultConfig.organization_name,
+          doc_number_format: appSettings.doc_number_format || defaultConfig.doc_number_format,
+          logo_url: appSettings.logo_url || defaultConfig.logo_url,
+          whatsapp_number: appSettings.whatsapp_number || defaultConfig.whatsapp_number,
+          submit_button_text: appSettings.submit_button_text || defaultConfig.submit_button_text
+        };
+      }
+      // fallback: read client id & spreadsheet id from localStorage (populated by settings form)
+      const lFormTitle = localStorage.getItem('atk_form_title');
+      return {
+        form_title: lFormTitle || defaultConfig.form_title,
+        budget_year: localStorage.getItem('atk_budget_year') || defaultConfig.budget_year,
+        organization_name: localStorage.getItem('atk_org') || defaultConfig.organization_name,
+        doc_number_format: localStorage.getItem('atk_doc_prefix') || defaultConfig.doc_number_format,
+        logo_url: localStorage.getItem('atk_logo') || defaultConfig.logo_url,
+        whatsapp_number: localStorage.getItem('atk_whatsapp') || defaultConfig.whatsapp_number,
+        submit_button_text: defaultConfig.submit_button_text
+      };
+    }
 
-    // --- Simple view switcher ---
-    function switchView(v){ currentView=v; ['requestFormView','allRequestsView','verifierView','supervisorView','requestDetailView','settingsView'].forEach(id=>{ const el=document.getElementById(id); if(!el) return; if((v==='form' && id==='requestFormView') || (v==='requests' && id==='allRequestsView') || (v==='verifier' && id==='verifierView') || (v==='supervisor' && id==='supervisorView') || (v==='detail' && id==='requestDetailView') || (v==='settings' && id==='settingsView')) el.classList.remove('hidden'); else el.classList.add('hidden'); }); if(v==='requests') renderAllRequests(); }
-    window.switchView = switchView;
+    function applySettingsToUI(){
+      const s=getCurrentSettings();
+      document.querySelectorAll('.logo-container').forEach(el => el.innerHTML = getLogoHTML(s.logo_url));
+      const submitBtn = document.getElementById('submitRequestBtn');
+      if(submitBtn) submitBtn.textContent = s.submit_button_text;
+    }
 
-    // --- Data SDK listener: will be invoked by your _sdk/data_sdk.js when it calls dataHandler.onDataChanged(data) ---
+    function getLogoHTML(logoUrl){
+      if(logoUrl && logoUrl.trim()!=='') return `<img src="${escapeHtml(logoUrl)}" alt="Logo" class="w-20 h-20 object-contain" onerror="this.style.display='none'">`;
+      return `<svg width="80" height="80" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><path d="M50 5 L85 20 L85 50 Q85 75 50 95 Q15 75 15 50 L15 20 Z" fill="#1e40af"/><path d="M50 15 L75 25 L75 50 Q75 70 50 85 Q25 70 25 50 L25 25 Z" fill="#3b82f6"/><text x="50" y="45" font-family="Arial" font-size="16" font-weight="bold" fill="white" text-anchor="middle">BPS</text></svg>`;
+    }
+
+    // ------------------ Render lists & detail ------------------
+    function renderAllRequests(){
+      const container=document.getElementById('allRequestsList');
+      const requests = (currentRequests||[]).filter(r=>r.recordType==='request');
+      if(requests.length===0){ container.innerHTML='<p class="text-gray-500 text-center py-8">Belum ada permintaan</p>'; return; }
+      const sorted = requests.slice().sort((a,b)=> new Date(b.createdAt) - new Date(a.createdAt));
+      container.innerHTML = '';
+      sorted.forEach(r=>{
+        const card=document.createElement('div'); card.className='border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow';
+        const statusBadge = `<span class="px-3 py-1 rounded-full text-sm font-semibold ${getStatusColor(r.status)}">${r.status}</span>`;
+        card.innerHTML = `
+          <div class="flex justify-between items-start mb-2">
+            <div class="flex-1 cursor-pointer">
+              <h3 class="font-bold text-lg text-gray-800">${escapeHtml(r.documentNumber)}</h3>
+              <p class="text-sm text-gray-600">${escapeHtml(r.workUnit)} - ${escapeHtml(r.year)}</p>
+            </div>
+            <div class="flex gap-2 items-start">
+              ${statusBadge}
+              <button class="open-wa px-3 py-1 bg-green-500 text-white rounded-lg">📱 Buka WA</button>
+              <button class="delete-req px-3 py-1 bg-red-500 text-white rounded-lg">🗑️ Hapus</button>
+            </div>
+          </div>
+          <div class="cursor-pointer view-detail">
+            <p class="text-sm text-gray-700 mb-2"><strong>Requester:</strong> ${escapeHtml(r.requesterName)} (${escapeHtml(r.requesterNIP)})</p>
+            <p class="text-sm text-gray-600"><strong>Date:</strong> ${formatDate(r.submissionDate)}</p>
+          </div>
+        `;
+        // events
+        card.querySelector('.view-detail').addEventListener('click', ()=> window.viewRequestDetail(r.__backendId || r.documentNumber));
+        card.querySelector('.open-wa').addEventListener('click', ()=> openWhatsApp(r.__backendId || r.documentNumber));
+        card.querySelector('.delete-req').addEventListener('click', async (ev)=> {
+          ev.stopPropagation();
+          if(!confirm('Yakin ingin menghapus permintaan ini?')) return;
+          const sdk = ensureDataSdk();
+          if(sdk && sdk.delete){
+            const result = await sdk.delete(r);
+            if(result && result.isOk){ showToast('Permintaan berhasil dihapus'); }
+            else { showToast('Gagal menghapus', true); console.error('delete error', result); }
+          } else {
+            // fallback remove local
+            currentRequests = currentRequests.filter(x => (x.__backendId || x.documentNumber) !== (r.__backendId || r.documentNumber));
+            renderAllRequests();
+            showToast('Dihapus (local)');
+          }
+        });
+        container.appendChild(card);
+      });
+    }
+
+    function getStatusColor(status){
+      switch(status){
+        case 'Pending Verification': return 'bg-yellow-200 text-yellow-800';
+        case 'Verified - Pending Approval': return 'bg-blue-200 text-blue-800';
+        case 'Fully Approved': return 'bg-green-200 text-green-800';
+        case 'Rejected by Verifier': case 'Rejected by Supervisor': return 'bg-red-200 text-red-800';
+        default: return 'bg-gray-200 text-gray-800';
+      }
+    }
+
+    window.viewRequestDetail = function(id){
+      const req = currentRequests.find(r=> (r.__backendId && r.__backendId===id) || (r.documentNumber && r.documentNumber===id));
+      if(!req){ showToast('Request not found', true); return; }
+      editingRequestId = req.__backendId || req.documentNumber;
+      const dv = document.getElementById('requestDetailView');
+      dv.innerHTML = `
+        <div class="no-print mb-4">
+          <button onclick="window.switchView('requests')" class="px-4 py-2 bg-gray-500 text-white rounded">← Back</button>
+          <button onclick="window.printDocument && window.printDocument()" class="ml-2 px-4 py-2 bg-blue-500 text-white rounded">🖨️ Print</button>
+        </div>
+        <div class="mb-8 border-b-2 border-gray-800 pb-6">
+          <div class="flex items-center gap-6">
+            ${getLogoHTML(getCurrentSettings().logo_url)}
+            <div>
+              <h1 class="text-3xl font-bold">${escapeHtml(getCurrentSettings().form_title)}</h1>
+              <p>Tahun Anggaran ${escapeHtml(getCurrentSettings().budget_year)}</p>
+              <p>${escapeHtml(getCurrentSettings().organization_name)}</p>
+            </div>
+          </div>
+        </div>
+        <div>
+          <p><strong>Document Number:</strong> ${escapeHtml(req.documentNumber)}</p>
+          <p><strong>Submission:</strong> ${escapeHtml(req.submissionLocation)}, ${formatDate(req.submissionDate)}</p>
+          <p><strong>Status:</strong> <span class="px-3 py-1 rounded-full ${getStatusColor(req.status)}">${escapeHtml(req.status)}</span></p>
+        </div>
+        <div class="mb-6 mt-4">
+          <h2 class="text-xl font-bold">ATK Items</h2>
+          <table class="w-full border-collapse border border-gray-300">
+            <thead class="bg-gray-100"><tr><th>No</th><th>Item</th><th>Qty</th><th>Notes</th></tr></thead>
+            <tbody>
+              ${JSON.parse(req.items).map((it,i)=>`<tr><td class="border px-3">${i+1}</td><td class="border px-3">${escapeHtml(it.name)}</td><td class="border px-3">${escapeHtml(String(it.quantity))}</td><td class="border px-3">${escapeHtml(it.notes||'-')}</td></tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+        <div class="digital-signature">
+          <p class="text-green-700 font-semibold mb-1">✓ DIGITALLY SIGNED</p>
+          <p class="text-gray-800"><strong>Signed by:</strong> ${escapeHtml(req.requesterName)}</p>
+          <p class="text-gray-700"><strong>NIP:</strong> ${escapeHtml(req.requesterNIP)}</p>
+          <p class="text-gray-600 text-sm"><strong>Date:</strong> ${formatDate(req.submissionDate)}</p>
+          <p class="text-gray-600 text-sm"><strong>Timestamp:</strong> ${formatTimestamp(req.createdAt)}</p>
+        </div>
+      `;
+      window.switchView('detail');
+    };
+
+    // ------------------ WhatsApp helper ------------------
+    function getWhatsAppUrl(requestId){
+      const req = currentRequests.find(r=> (r.__backendId && r.__backendId===requestId) || (r.documentNumber && r.documentNumber===requestId));
+      if(!req) return null;
+      const settings = getCurrentSettings();
+      const phone = localStorage.getItem('atk_whatsapp_number') || settings.whatsapp_number || '';
+      if(!phone) return null;
+      const items = JSON.parse(req.items);
+      const itemsList = items.map((it,idx)=> `${idx+1}. ${it.name} (${it.quantity})`).join('%0A');
+      let message = `*Pengingat Permintaan ATK*%0A%0A`;
+      message += `*Dokumen:* ${req.documentNumber}%0A`;
+      message += `*Status:* ${req.status}%0A`;
+      message += `*Bagian/Fungsi:* ${req.workUnit}%0A`;
+      message += `*Tahun:* ${req.year}%0A%0A`;
+      message += `*Pemohon:*%0ANama: ${req.requesterName}%0A NIP: ${req.requesterNIP}%0A%0A`;
+      message += `*Item yang Diminta:*%0A${itemsList}%0A%0A`;
+      message += `*Tanggal Pengajuan:* ${formatDate(req.submissionDate)}%0A`;
+      message += `*Lokasi:* ${req.submissionLocation}%0A%0A`;
+      if(req.status==='Pending Verification') message += `⚠️ Permintaan ini menunggu verifikasi. Mohon tinjau dan verifikasi.`;
+      else if(req.status==='Verified - Pending Approval') message += `⚠️ Permintaan ini menunggu persetujuan akhir.`;
+      else if(req.status==='Fully Approved') message += `✅ Permintaan ini telah disetujui.`;
+      return `https://wa.me/${phone}?text=${message}`;
+    }
+    function openWhatsApp(requestId){
+      const url = getWhatsAppUrl(requestId);
+      if(!url){ showToast('Nomor WhatsApp belum diatur di Settings', true); return; }
+      window.open(url, '_blank', 'noopener');
+    }
+
+    // ------------------ Settings UI ------------------
+    function loadSettingsForm(){
+      const s = getCurrentSettings();
+      const v = document.getElementById('settingsView');
+      // read client id / spreadsheet id from localStorage to allow initial setup
+      const savedClientId = localStorage.getItem('atk_google_client_id') || '';
+      const savedSpreadsheet = localStorage.getItem('atk_google_sheet_id') || '';
+      v.innerHTML = `
+        <h2 class="text-2xl font-bold mb-4">Settings / Pengaturan</h2>
+        <div class="mb-4"><label class="block text-sm font-semibold mb-1">Form Title</label><input id="settingFormTitle" class="w-full px-3 py-2 border rounded" value="${escapeHtml(s.form_title)}"></div>
+        <div class="mb-4"><label class="block text-sm font-semibold mb-1">Budget Year</label><input id="settingBudgetYear" class="w-full px-3 py-2 border rounded" value="${escapeHtml(s.budget_year)}"></div>
+        <div class="mb-4"><label class="block text-sm font-semibold mb-1">Organization Name</label><input id="settingOrganizationName" class="w-full px-3 py-2 border rounded" value="${escapeHtml(s.organization_name)}"></div>
+        <div class="mb-4"><label class="block text-sm font-semibold mb-1">Document Number Prefix</label><input id="settingDocNumberFormat" class="w-full px-3 py-2 border rounded" value="${escapeHtml(appSettings && appSettings.doc_number_format ? appSettings.doc_number_format : (localStorage.getItem('atk_doc_prefix')||'0001'))}"><p class="text-xs text-gray-500 mt-1">Contoh: 0001 -> 0001/ATK/MM/YYYY</p></div>
+        <div class="mb-4"><label class="block text-sm font-semibold mb-1">Logo URL</label><input id="settingLogoUrl" class="w-full px-3 py-2 border rounded" value="${escapeHtml(s.logo_url)}"></div>
+        <div class="mb-4"><label class="block text-sm font-semibold mb-1">WhatsApp Number (contoh: 628123...)</label><input id="settingWhatsAppNumber" class="w-full px-3 py-2 border rounded" value="${escapeHtml(localStorage.getItem('atk_whatsapp_number') || s.whatsapp_number || '')}"></div>
+
+        <hr class="my-4" />
+        <h3 class="text-lg font-semibold mb-2">Google API / Spreadsheet</h3>
+        <div class="mb-3"><label class="block text-sm font-semibold mb-1">Google Client ID (OAuth)</label><input id="settingGoogleClientId" class="w-full px-3 py-2 border rounded" placeholder="3348...apps.googleusercontent.com" value="${escapeHtml(savedClientId)}"></div>
+        <div class="mb-3"><label class="block text-sm font-semibold mb-1">Spreadsheet ID (Sheet URL atau ID)</label><input id="settingGoogleSheetId" class="w-full px-3 py-2 border rounded" placeholder="https://docs.google.com/spreadsheets/d/..." value="${escapeHtml(savedSpreadsheet)}"></div>
+        <div class="flex gap-4"><button id="saveSettingsBtn" class="px-4 py-2 bg-green-600 text-white rounded">💾 Save Settings</button><button id="connectGoogleBtn" class="px-4 py-2 bg-blue-600 text-white rounded">🔌 Connect to Google</button><button id="cancelSettingsBtn" class="px-4 py-2 bg-gray-500 text-white rounded">Cancel</button></div>
+        <p class="text-xs text-gray-500 mt-3">Catatan: Setelah mengisi Client ID & Spreadsheet ID, klik Connect to Google untuk menyelesaikan otorisasi (akan muncul popup Google Sign-in).</p>
+      `;
+      document.getElementById('saveSettingsBtn').addEventListener('click', saveSettings);
+      document.getElementById('cancelSettingsBtn').addEventListener('click', ()=> switchView('form'));
+      document.getElementById('connectGoogleBtn').addEventListener('click', async ()=>{
+        // store client id & spreadsheet id to localStorage then initialize adapter
+        const cid = document.getElementById('settingGoogleClientId').value.trim();
+        const sidRaw = document.getElementById('settingGoogleSheetId').value.trim();
+        if(!cid || !sidRaw){ showToast('Isi Client ID dan Spreadsheet ID terlebih dahulu', true); return; }
+        localStorage.setItem('atk_google_client_id', cid);
+        // extract sheet id if full url provided
+        const sheetId = extractSpreadsheetId(sidRaw);
+        if(!sheetId){ showToast('Spreadsheet ID tidak valid', true); return; }
+        localStorage.setItem('atk_google_sheet_id', sheetId);
+        showToast('Client ID & Spreadsheet ID disimpan. Memulai koneksi ke Google...');
+        // re-init data SDK if available
+        const sdk = ensureDataSdk();
+        if(sdk && sdk.init){
+          try{
+            const res = await sdk.init(dataHandler, {clientId: cid, spreadsheetId: sheetId});
+            if(res && res.isOk) showToast('Terkoneksi ke Google Sheets!');
+            else showToast('Gagal konek: ' + (res && res.error && res.error.message ? res.error.message : 'Unknown'), true);
+          }catch(e){ console.error(e); showToast('Error saat konek: '+e.message,true); }
+        } else {
+          showToast('Adapter Google tidak ditemukan. Pastikan dataAdapter-google-sheets.js ada.', true);
+        }
+      });
+    }
+
+    function extractSpreadsheetId(raw){
+      try{
+        // if user pasted whole url, extract id
+        const m = raw.match(/\/d\/([a-zA-Z0-9-_]+)/);
+        if(m && m[1]) return m[1];
+        // if raw looks like id
+        if(/^[-_a-zA-Z0-9]{20,}$/.test(raw)) return raw;
+        return null;
+      }catch(e){ return null; }
+    }
+
+    async function saveSettings(){
+      // save both locally and (if connected) to sheet via SDK (as a recordType:'settings')
+      const s = {
+        recordType: 'settings',
+        form_title: document.getElementById('settingFormTitle').value.trim(),
+        budget_year: document.getElementById('settingBudgetYear').value.trim(),
+        organization_name: document.getElementById('settingOrganizationName').value.trim(),
+        doc_number_format: document.getElementById('settingDocNumberFormat').value.trim(),
+        logo_url: document.getElementById('settingLogoUrl').value.trim(),
+        whatsapp_number: document.getElementById('settingWhatsAppNumber').value.trim(),
+        submit_button_text: defaultConfig.submit_button_text,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      // persist to localStorage for immediate UI change & to allow adapter init
+      localStorage.setItem('atk_form_title', s.form_title);
+      localStorage.setItem('atk_budget_year', s.budget_year);
+      localStorage.setItem('atk_org', s.organization_name);
+      localStorage.setItem('atk_doc_prefix', s.doc_number_format);
+      localStorage.setItem('atk_logo', s.logo_url);
+      localStorage.setItem('atk_whatsapp_number', s.whatsapp_number);
+      appSettings = s;
+      applySettingsToUI();
+      // attempt to save to sheet via SDK
+      const sdk = ensureDataSdk();
+      if(sdk && sdk.create){
+        const res = await sdk.create(s);
+        if(res && res.isOk) showToast('Settings saved to spreadsheet'); else showToast('Settings saved locally (failed saving to sheet)', true);
+      } else {
+        showToast('Settings saved locally (SDK not connected)');
+      }
+      switchView('form');
+    }
+
+    // ------------------ Data handler (adapter -> app) ------------------
     const dataHandler = {
       onDataChanged(data){
-        // store records locally and apply settings
+        // data is array of records read from sheet (provided by adapter)
+        // keep appSettings as the first recordType==='settings' if exists
         const settingsRecords = data.filter(r=>r.recordType==='settings');
-        appSettings = settingsRecords.length>0?settingsRecords[0]:null;
+        appSettings = settingsRecords.length>0 ? settingsRecords[0] : appSettings;
         currentRequests = data;
         applySettingsToUI();
-        if(currentView==='requests') renderAllRequests(); else if(currentView==='form') updateDocumentNumber();
+        if(currentView==='requests') renderAllRequests();
+        if(currentView==='form') updateDocumentNumber();
       }
     };
 
-    // --- Initialize: attempt to init data SDK if available ---
+    // ------------------ View switcher ------------------
+    function switchView(view){
+      currentView = view;
+      const ids = ['requestFormView','allRequestsView','verifierView','supervisorView','requestDetailView','settingsView'];
+      ids.forEach(id=>{ const el=document.getElementById(id); if(!el) return; el.classList.add('hidden'); });
+      if(view==='form') document.getElementById('requestFormView').classList.remove('hidden');
+      else if(view==='requests'){ document.getElementById('allRequestsView').classList.remove('hidden'); renderAllRequests(); }
+      else if(view==='verifier') document.getElementById('verifierView').classList.remove('hidden');
+      else if(view==='supervisor') document.getElementById('supervisorView').classList.remove('hidden');
+      else if(view==='detail') document.getElementById('requestDetailView').classList.remove('hidden');
+      else if(view==='settings') { document.getElementById('settingsView').classList.remove('hidden'); loadSettingsForm(); }
+    }
+    window.switchView = switchView;
+
+    // Print (helper)
+    window.printDocument = function(){ if(currentView!=='detail'){ showToast('Buka detail permintaan dulu', true); return; } setTimeout(()=>window.print(),150); };
+
+    // Hook top nav buttons
+    document.getElementById('newRequestBtn').addEventListener('click', ()=>{ resetForm(); switchView('form'); });
+    document.getElementById('viewRequestsBtn').addEventListener('click', ()=> switchView('requests'));
+    document.getElementById('verifierViewBtn').addEventListener('click', ()=> switchView('verifier'));
+    document.getElementById('supervisorViewBtn').addEventListener('click', ()=> switchView('supervisor'));
+    document.getElementById('settingsBtn').addEventListener('click', ()=> switchView('settings'));
+
+    // ------------------ Init app: try to init SDK if localStorage has client & sheet id ------------------
     async function init(){
+      // populate fallback settings from localStorage
+      const lForm=localStorage.getItem('atk_form_title');
+      if(lForm) appSettings = Object.assign({}, getCurrentSettings());
+
+      // if adapter exists attempt auto-init using saved client id & sheet id
       const sdk = ensureDataSdk();
-      if(sdk && sdk.init){
-        try{ const result = await sdk.init(dataHandler); if(!result || !result.isOk) { console.warn('dataSdk.init returned not ok', result); showToast('Warning: data SDK failed to initialize', true); }
-        }catch(e){ console.error('dataSdk.init exception', e); showToast('Error initializing data backend: '+e.message, true);}      
+      const cid = localStorage.getItem('atk_google_client_id');
+      const sid = localStorage.getItem('atk_google_sheet_id');
+      if(sdk && sdk.init && cid && sid){
+        try{
+          const r = await sdk.init(dataHandler, {clientId: cid, spreadsheetId: sid});
+          if(r && r.isOk){ showToast('Terhubung ke Google Sheets'); }
+          else { console.warn('sdk.init not ok', r); showToast('Gagal konek ke Google Sheets (lihat console)', true); }
+        }catch(e){ console.error(e); showToast('Error saat inisialisasi SDK: '+(e.message||e), true); }
       } else {
-        // No SDK: populate demo default settings (app works locally in-memory)
-        appSettings = Object.assign({}, defaultConfig);
-        currentRequests = [];
+        if(!sdk) console.warn('dataSdk not available — running in local/demo mode');
       }
 
-      renderFormView(); applySettingsToUI();
-
-      // attach top nav buttons
-      document.getElementById('newRequestBtn').addEventListener('click', ()=>{ resetForm(); switchView('form'); });
-      document.getElementById('viewRequestsBtn').addEventListener('click', ()=>{ switchView('requests'); });
-      document.getElementById('verifierViewBtn').addEventListener('click', ()=>{ switchView('verifier'); });
-      document.getElementById('supervisorViewBtn').addEventListener('click', ()=>{ switchView('supervisor'); });
-      document.getElementById('settingsBtn').addEventListener('click', ()=>{ switchView('settings'); loadSettingsForm(); });
+      renderFormView();
+      applySettingsToUI();
     }
 
-    // --- Settings form (simple) ---
-    function loadSettingsForm(){ const s=getCurrentSettings(); const v=document.getElementById('settingsView'); v.innerHTML=`<h2 class="text-2xl font-bold mb-4">Settings</h2><div><label>Form Title</label><input id="settingFormTitle" class="w-full border px-3 py-2" value="${s.form_title}"></div><div class="mt-2"><label>Budget Year</label><input id="settingBudgetYear" class="w-full border px-3 py-2" value="${s.budget_year}"></div><div class="mt-2"><label>Organization Name</label><input id="settingOrganizationName" class="w-full border px-3 py-2" value="${s.organization_name}"></div><div class="mt-2"><label>Doc Number Prefix</label><input id="settingDocNumberFormat" class="w-full border px-3 py-2" value="${s.doc_number_format}"></div><div class="mt-2"><label>Logo URL</label><input id="settingLogoUrl" class="w-full border px-3 py-2" value="${s.logo_url}"></div><div class="mt-2"><label>WhatsApp Number</label><input id="settingWhatsAppNumber" class="w-full border px-3 py-2" value="${s.whatsapp_number}"></div><div class="flex gap-2 mt-4"><button id="saveSettingsBtn" class="px-4 py-2 bg-green-600 text-white rounded">Save</button><button id="cancelSettingsBtn" class="px-4 py-2 bg-gray-500 text-white rounded">Cancel</button></div>`;
-      document.getElementById('saveSettingsBtn').addEventListener('click', saveSettings);
-      document.getElementById('cancelSettingsBtn').addEventListener('click', ()=>switchView('form'));
-    }
-
-    async function saveSettings(){ const data={ recordType:'settings', form_title:document.getElementById('settingFormTitle').value.trim(), budget_year:document.getElementById('settingBudgetYear').value.trim(), organization_name:document.getElementById('settingOrganizationName').value.trim(), doc_number_format:document.getElementById('settingDocNumberFormat').value.trim(), logo_url:document.getElementById('settingLogoUrl').value.trim(), whatsapp_number:document.getElementById('settingWhatsAppNumber').value.trim(), submit_button_text: defaultConfig.submit_button_text, createdAt:new Date().toISOString(), updatedAt:new Date().toISOString() };
-      const sdk = ensureDataSdk(); if(sdk && sdk.create){ const res = await sdk.create(data); if(res && res.isOk){ showToast('Settings saved'); } else { showToast('Failed to save settings', true); } } else { appSettings = data; showToast('Settings applied (local only)'); applySettingsToUI(); switchView('form'); }
-    }
-
-    // --- kick off init ---
+    // start
     init();
-
-  }); // end DOMContentLoaded
+  });
   </script>
 </body>
 </html>
