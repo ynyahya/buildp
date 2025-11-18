@@ -1,0 +1,1507 @@
+<!doctype html>
+<html lang="en">
+ <head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ATK Request Form - BPS South Jakarta</title>
+  <script src="/_sdk/data_sdk.js"></script>
+  <script src="/_sdk/element_sdk.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body {
+      box-sizing: border-box;
+    }
+    
+    @media print {
+      .no-print {
+        display: none !important;
+      }
+      
+      body {
+        background: white !important;
+        margin: 0;
+        padding: 20px;
+      }
+      
+      .print-section {
+        page-break-inside: avoid;
+        box-shadow: none !important;
+      }
+      
+      #app {
+        max-width: 100% !important;
+        padding: 0 !important;
+        margin: 0 !important;
+      }
+      
+      #requestDetailView {
+        box-shadow: none !important;
+        border: none !important;
+        padding: 20px !important;
+      }
+      
+      table {
+        page-break-inside: auto;
+      }
+      
+      tr {
+        page-break-inside: avoid;
+        page-break-after: auto;
+      }
+      
+      .digital-signature {
+        border: 2px solid #10b981 !important;
+        background: #f0fdf4 !important;
+        print-color-adjust: exact;
+        -webkit-print-color-adjust: exact;
+      }
+    }
+    
+    .toast {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      background: #10b981;
+      color: white;
+      padding: 16px 24px;
+      border-radius: 8px;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+      z-index: 1000;
+      animation: slideIn 0.3s ease-out;
+    }
+    
+    .toast.error {
+      background: #ef4444;
+    }
+    
+    @keyframes slideIn {
+      from {
+        transform: translateX(400px);
+        opacity: 0;
+      }
+      to {
+        transform: translateX(0);
+        opacity: 1;
+      }
+    }
+    
+    .modal-backdrop {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 999;
+    }
+    
+    .modal-content {
+      background: white;
+      border-radius: 12px;
+      padding: 24px;
+      max-width: 500px;
+      width: 90%;
+      max-height: 90%;
+      overflow-y: auto;
+    }
+    
+    .digital-signature {
+      border: 2px solid #10b981;
+      background: #f0fdf4;
+      padding: 16px;
+      border-radius: 8px;
+      font-family: 'Courier New', monospace;
+    }
+  </style>
+  <style>@view-transition { navigation: auto; }</style>
+ </head>
+ <body class="bg-gray-50 min-h-full">
+  <div id="app" class="max-w-6xl mx-auto p-4 md:p-8"><!-- View Selector (No Print) -->
+   <div class="no-print mb-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3"><button id="newRequestBtn" class="px-4 py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors text-sm"> 📝 Permintaan Baru </button> <button id="viewRequestsBtn" class="px-4 py-3 bg-gray-600 text-white rounded-lg font-semibold hover:bg-gray-700 transition-colors text-sm"> 📋 Semua Permintaan </button> <button id="verifierViewBtn" class="px-4 py-3 bg-orange-600 text-white rounded-lg font-semibold hover:bg-orange-700 transition-colors text-sm"> ✅ Verifikator </button> <button id="supervisorViewBtn" class="px-4 py-3 bg-purple-600 text-white rounded-lg font-semibold hover:bg-purple-700 transition-colors text-sm"> 👔 Penanggung Jawab </button> <button id="settingsBtn" class="px-4 py-3 bg-gray-700 text-white rounded-lg font-semibold hover:bg-gray-800 transition-colors text-sm"> ⚙️ Pengaturan </button>
+   </div><!-- New Request Form -->
+   <div id="requestFormView" class="bg-white rounded-lg shadow-lg p-6 md:p-8 print-section"><!-- Header -->
+    <div class="mb-8 border-b-2 border-gray-800 pb-6">
+     <div class="flex items-center justify-center gap-6"><!-- Logo -->
+      <div class="flex-shrink-0 logo-container">
+       <svg width="80" height="80" viewbox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><!-- Shield outline --> <path d="M50 5 L85 20 L85 50 Q85 75 50 95 Q15 75 15 50 L15 20 Z" fill="#1e40af" stroke="#1e3a8a" stroke-width="2" /> <!-- Inner shield --> <path d="M50 15 L75 25 L75 50 Q75 70 50 85 Q25 70 25 50 L25 25 Z" fill="#3b82f6" /> <!-- BPS Text --> <text x="50" y="45" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="white" text-anchor="middle">
+         BPS
+        </text> <!-- Statistics symbol (bars) --> <rect x="35" y="55" width="6" height="15" fill="white" opacity="0.9" /> <rect x="44" y="50" width="6" height="20" fill="white" opacity="0.9" /> <rect x="53" y="52" width="6" height="18" fill="white" opacity="0.9" /> <rect x="62" y="48" width="6" height="22" fill="white" opacity="0.9" />
+       </svg>
+      </div><!-- Title section -->
+      <div class="text-center flex-grow">
+       <h1 id="formTitle" class="text-3xl font-bold text-gray-800 mb-2">Form Permintaan ATK</h1>
+       <p id="budgetYear" class="text-gray-700 text-lg mb-1">Tahun Anggaran 2025</p>
+       <p id="organizationName" class="text-gray-600">BPS Kota Jakarta Selatan</p>
+      </div><!-- Spacer for balance (invisible) -->
+      <div class="flex-shrink-0 w-20"></div>
+     </div>
+    </div><!-- Document Information -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+     <div><label class="block text-sm font-semibold text-gray-700 mb-2">No Dokumen *</label> <input type="text" id="documentNumber" readonly class="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-100 text-gray-700 cursor-not-allowed">
+     </div>
+     <div><label class="block text-sm font-semibold text-gray-700 mb-2">Tahun *</label> <select id="yearSelect" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"> </select>
+     </div>
+     <div><label class="block text-sm font-semibold text-gray-700 mb-2">Bagian/Fungsi *</label> <select id="workUnitSelect" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"> <option value="">Pilih Bagian/Fungsi</option> <option value="Subbagian Umum">Subbagian Umum</option> <option value="Sosial">Sosial</option> <option value="Produksi">Produksi</option> <option value="Distribusi">Distribusi</option> <option value="Nerwilis">Nerwilis</option> <option value="IPDS">IPDS</option> </select>
+     </div>
+    </div><!-- ATK Items Table -->
+    <div class="mb-6">
+     <div class="flex justify-between items-center mb-4">
+      <h2 class="text-xl font-bold text-gray-800">Rincian ATK</h2><button id="addRowBtn" class="no-print px-4 py-2 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition-colors"> + Tambah Item </button>
+     </div>
+     <div class="overflow-x-auto">
+      <table class="w-full border-collapse border border-gray-300">
+       <thead>
+        <tr class="bg-gray-100">
+         <th class="border border-gray-300 px-4 py-3 text-left font-semibold text-gray-700 w-16">No</th>
+         <th class="border border-gray-300 px-4 py-3 text-left font-semibold text-gray-700">Nama Item</th>
+         <th class="border border-gray-300 px-4 py-3 text-left font-semibold text-gray-700 w-32">Jumlah</th>
+         <th class="border border-gray-300 px-4 py-3 text-left font-semibold text-gray-700">Satuan</th>
+         <th class="border border-gray-300 px-4 py-3 text-center font-semibold text-gray-700 w-24 no-print">Aksi</th>
+        </tr>
+       </thead>
+       <tbody id="itemsTableBody">
+       </tbody>
+      </table>
+     </div>
+    </div><!-- Submission Date & Location -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+     <div><label class="block text-sm font-semibold text-gray-700 mb-2">Lokasi Pengajuan</label> <input type="text" id="submissionLocation" value="Jakarta" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+     </div>
+     <div><label class="block text-sm font-semibold text-gray-700 mb-2">Tanggal Pengajuan</label> <input type="date" id="submissionDate" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+     </div>
+    </div><!-- Requester Information -->
+    <div class="border-t-2 border-gray-200 pt-6 mb-6">
+     <h2 class="text-xl font-bold text-gray-800 mb-4">Informasi Pemohon</h2>
+     <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+      <div><label class="block text-sm font-semibold text-gray-700 mb-2">Nama *</label> <input type="text" id="requesterName" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+      </div>
+      <div><label class="block text-sm font-semibold text-gray-700 mb-2">NIP *</label> <input type="text" id="requesterNIP" placeholder="contoh: 199012345678901234" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+      </div>
+     </div>
+     <div class="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+      <p class="text-sm text-blue-800"><strong>ℹ️ Tanda Tangan Digital:</strong> Permintaan Anda akan ditandatangani secara digital dengan nama, NIP, dan timestamp saat Anda submit.</p>
+     </div><button id="submitRequestBtn" class="no-print w-full px-6 py-3 bg-blue-600 text-white rounded-lg font-bold text-lg hover:bg-blue-700 transition-colors"> Kirim Permintaan </button>
+    </div>
+   </div><!-- All Requests View -->
+   <div id="allRequestsView" class="hidden">
+    <div class="bg-white rounded-lg shadow-lg p-6">
+     <h2 class="text-2xl font-bold text-gray-800 mb-6">Semua Permintaan ATK</h2>
+     <div id="allRequestsList" class="space-y-4">
+     </div>
+    </div>
+   </div><!-- Verifikator Dashboard -->
+   <div id="verifierView" class="hidden">
+    <div class="bg-white rounded-lg shadow-lg p-6">
+     <h2 class="text-2xl font-bold text-gray-800 mb-6">Dashboard Verifikator</h2>
+     <p class="text-sm text-gray-600 mb-4">Permintaan menunggu verifikasi (Tahap 1 dari 2)</p>
+     <div id="verifierRequestsList" class="space-y-4">
+     </div>
+    </div>
+   </div><!-- Supervisor Dashboard -->
+   <div id="supervisorView" class="hidden">
+    <div class="bg-white rounded-lg shadow-lg p-6">
+     <h2 class="text-2xl font-bold text-gray-800 mb-6">Dashboard Penanggung Jawab</h2>
+     <p class="text-sm text-gray-600 mb-4">Permintaan menunggu persetujuan akhir (Tahap 2 dari 2)</p>
+     <div id="supervisorRequestsList" class="space-y-4">
+     </div>
+    </div>
+   </div><!-- Request Detail View -->
+   <div id="requestDetailView" class="hidden bg-white rounded-lg shadow-lg p-6 md:p-8 print-section">
+   </div><!-- Settings View -->
+   <div id="settingsView" class="hidden">
+    <div class="bg-white rounded-lg shadow-lg p-6 md:p-8">
+     <h2 class="text-2xl font-bold text-gray-800 mb-6">Settings / Pengaturan</h2>
+     <div class="mb-6"><label class="block text-sm font-semibold text-gray-700 mb-2">Form Title / Judul Form</label> <input type="text" id="settingFormTitle" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="Form Permintaan ATK">
+     </div>
+     <div class="mb-6"><label class="block text-sm font-semibold text-gray-700 mb-2">Budget Year / Tahun Anggaran</label> <input type="text" id="settingBudgetYear" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="2025">
+     </div>
+     <div class="mb-6"><label class="block text-sm font-semibold text-gray-700 mb-2">Organization Name / Nama Organisasi</label> <input type="text" id="settingOrganizationName" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="BPS Kota Jakarta Selatan">
+     </div>
+     <div class="mb-6"><label class="block text-sm font-semibold text-gray-700 mb-2">Document Number Prefix / Prefix Nomor Dokumen</label> <input type="text" id="settingDocNumberFormat" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="0001">
+      <p class="text-xs text-gray-500 mt-1">Example: If you enter "0001", document numbers will be: 0001/ATK/01/2025, 0002/ATK/01/2025, etc.</p>
+      <p class="text-xs text-gray-500 mt-1">Format: [AUTO]/ATK/[BULAN]/[TAHUN]</p>
+     </div>
+     <div class="mb-6"><label class="block text-sm font-semibold text-gray-700 mb-2">Logo URL (Optional) / URL Logo (Opsional)</label> <input type="text" id="settingLogoUrl" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="https://example.com/logo.png (Leave empty for default BPS logo)">
+      <p class="text-xs text-gray-500 mt-1">Paste image URL or leave empty to use default BPS logo</p>
+     </div>
+     <div class="mb-6"><label class="block text-sm font-semibold text-gray-700 mb-2">Nomor WhatsApp Notifikasi</label> <input type="text" id="settingWhatsAppNumber" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="628123456789 (format: kode negara + nomor tanpa + atau spasi)">
+      <p class="text-xs text-gray-500 mt-1">Masukkan nomor WhatsApp untuk mengirim pengingat (contoh: 628123456789 untuk nomor Indonesia)</p>
+     </div>
+     <div class="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+      <p class="text-sm text-blue-800 mb-2"><strong>Preview:</strong></p>
+      <div class="text-center p-4 bg-white rounded border border-gray-200">
+       <div id="previewLogo" class="flex justify-center mb-3"></div>
+       <h3 id="previewTitle" class="text-2xl font-bold text-gray-800 mb-1">Form Permintaan ATK</h3>
+       <p id="previewBudgetYear" class="text-gray-600 mb-1">Tahun Anggaran 2025</p>
+       <p id="previewOrganization" class="text-gray-600">BPS Kota Jakarta Selatan</p>
+      </div>
+     </div>
+     <div class="flex gap-4"><button id="saveSettingsBtn" class="flex-1 px-6 py-3 bg-green-600 text-white rounded-lg font-bold hover:bg-green-700 transition-colors"> 💾 Save Settings </button> <button id="cancelSettingsBtn" class="flex-1 px-6 py-3 bg-gray-500 text-white rounded-lg font-bold hover:bg-gray-600 transition-colors"> Cancel </button>
+     </div>
+    </div>
+   </div>
+  </div>
+
+  <!-- === LOAD GAPI + ADAPTER BEFORE main app script === -->
+  <script src="https://apis.google.com/js/api.js"></script>
+  <script src="dataAdapter-google-sheets.js"></script>
+
+  <!-- main app script (original inline script) -->
+  <script>
+    const defaultConfig = {
+      form_title: "Form Permintaan ATK",
+      budget_year: "2025",
+      organization_name: "BPS Kota Jakarta Selatan",
+      logo_url: "https://upload.wikimedia.org/wikipedia/commons/thumb/2/28/Lambang_Badan_Pusat_Statistik_%28BPS%29_Indonesia.svg/1160px-Lambang_Badan_Pusat_Statistik_%28BPS%29_Indonesia.svg.png",
+      doc_number_format: "0001",
+      whatsapp_number: "6281290913435",
+      submit_button_text: "Kirim Permintaan"
+    };
+
+    let currentRequests = [];
+    let currentView = 'form';
+    let editingRequestId = null;
+    let appSettings = null;
+
+    // Initialize year dropdown
+    function initYearDropdown() {
+      const yearSelect = document.getElementById('yearSelect');
+      const currentYear = new Date().getFullYear();
+      
+      for (let i = currentYear - 5; i <= currentYear + 5; i++) {
+        const option = document.createElement('option');
+        option.value = i;
+        option.textContent = i;
+        if (i === currentYear) option.selected = true;
+        yearSelect.appendChild(option);
+      }
+    }
+
+    // Initialize submission date
+    function initSubmissionDate() {
+      const dateInput = document.getElementById('submissionDate');
+      const today = new Date().toISOString().split('T')[0];
+      dateInput.value = today;
+    }
+
+    // Get current settings from database or default
+    function getCurrentSettings() {
+      if (appSettings) {
+        return {
+          form_title: appSettings.form_title || defaultConfig.form_title,
+          budget_year: appSettings.budget_year || defaultConfig.budget_year,
+          organization_name: appSettings.organization_name || defaultConfig.organization_name,
+          doc_number_format: appSettings.doc_number_format || defaultConfig.doc_number_format,
+          logo_url: appSettings.logo_url || defaultConfig.logo_url,
+          whatsapp_number: appSettings.whatsapp_number || defaultConfig.whatsapp_number,
+          submit_button_text: appSettings.submit_button_text || defaultConfig.submit_button_text
+        };
+      }
+      return defaultConfig;
+    }
+
+    // Update document number automatically
+    function updateDocumentNumber() {
+      const docNumberInput = document.getElementById('documentNumber');
+      if (docNumberInput) {
+        docNumberInput.value = generateDocumentNumber();
+      }
+    }
+
+    // Add item row
+    function addItemRow() {
+      const tbody = document.getElementById('itemsTableBody');
+      const rowCount = tbody.children.length + 1;
+      
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td class="border border-gray-300 px-4 py-2 text-center">${rowCount}</td>
+        <td class="border border-gray-300 px-4 py-2">
+          <input type="text" class="item-name w-full px-2 py-1 border border-gray-200 rounded focus:ring-2 focus:ring-blue-500" placeholder="Masukkan nama item">
+        </td>
+        <td class="border border-gray-300 px-4 py-2">
+          <input type="number" class="item-quantity w-full px-2 py-1 border border-gray-200 rounded focus:ring-2 focus:ring-blue-500" min="1" value="1">
+        </td>
+        <td class="border border-gray-300 px-4 py-2">
+          <textarea class="item-notes w-full px-2 py-1 border border-gray-200 rounded focus:ring-2 focus:ring-blue-500" rows="2" placeholder="Satuan (contoh: pcs, box, lusin)"></textarea>
+        </td>
+        <td class="border border-gray-300 px-4 py-2 text-center no-print">
+          <button class="delete-row-btn px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 transition-colors">Hapus</button>
+        </td>
+      `;
+      
+      tbody.appendChild(row);
+      
+      row.querySelector('.delete-row-btn').addEventListener('click', () => {
+        row.remove();
+        updateRowNumbers();
+      });
+    }
+
+    function updateRowNumbers() {
+      const tbody = document.getElementById('itemsTableBody');
+      Array.from(tbody.children).forEach((row, index) => {
+        row.children[0].textContent = index + 1;
+      });
+    }
+
+    // Get items from table
+    function getItemsFromTable() {
+      const tbody = document.getElementById('itemsTableBody');
+      const items = [];
+      
+      Array.from(tbody.children).forEach(row => {
+        const name = row.querySelector('.item-name').value.trim();
+        const quantity = parseInt(row.querySelector('.item-quantity').value);
+        const notes = row.querySelector('.item-notes').value.trim();
+        
+        if (name && quantity > 0) {
+          items.push({ name, quantity, notes });
+        }
+      });
+      
+      return items;
+    }
+
+    // Show toast notification
+    function showToast(message, isError = false) {
+      const toast = document.createElement('div');
+      toast.className = `toast ${isError ? 'error' : ''}`;
+      toast.textContent = message;
+      document.body.appendChild(toast);
+      
+      setTimeout(() => {
+        toast.remove();
+      }, 3000);
+    }
+
+    // Generate document number
+    function generateDocumentNumber() {
+      const year = document.getElementById('yearSelect').value;
+      const submissionDate = document.getElementById('submissionDate').value;
+      const settings = getCurrentSettings();
+      const prefix = settings.doc_number_format;
+      
+      // Get month from submission date
+      let month = '01';
+      if (submissionDate) {
+        const date = new Date(submissionDate);
+        month = (date.getMonth() + 1).toString().padStart(2, '0');
+      } else {
+        const today = new Date();
+        month = (today.getMonth() + 1).toString().padStart(2, '0');
+      }
+      
+      // Find highest existing number for this year and month
+      const existingNumbers = currentRequests
+        .filter(r => r.recordType === 'request')
+        .filter(r => {
+          const parts = r.documentNumber.split('/');
+          // Format: XXXX/ATK/MM/YYYY
+          return parts.length === 4 && parts[2] === month && parts[3] === year;
+        })
+        .map(r => {
+          const parts = r.documentNumber.split('/');
+          return parseInt(parts[0]) || 0;
+        });
+      
+      const nextNumber = existingNumbers.length > 0 ? Math.max(...existingNumbers) + 1 : parseInt(prefix) || 1;
+      const paddedNumber = nextNumber.toString().padStart(4, '0');
+      
+      return `${paddedNumber}/ATK/${month}/${year}`;
+    }
+
+    // Validate form
+    function validateForm() {
+      const year = document.getElementById('yearSelect').value;
+      const workUnit = document.getElementById('workUnitSelect').value;
+      const items = getItemsFromTable();
+      const requesterName = document.getElementById('requesterName').value.trim();
+      const requesterNIP = document.getElementById('requesterNIP').value.trim();
+      
+      if (!year) {
+        showToast('Mohon pilih tahun', true);
+        return false;
+      }
+      
+      if (!workUnit) {
+        showToast('Mohon pilih bagian/fungsi', true);
+        return false;
+      }
+      
+      if (items.length === 0) {
+        showToast('Mohon tambahkan minimal satu item', true);
+        return false;
+      }
+      
+      if (!requesterName) {
+        showToast('Mohon isi nama pemohon', true);
+        return false;
+      }
+      
+      if (!requesterNIP) {
+        showToast('Mohon isi NIP pemohon', true);
+        return false;
+      }
+      
+      return true;
+    }
+
+    // Submit request
+    async function submitRequest() {
+      if (!validateForm()) return;
+      
+      // Check if we've reached the 999 record limit
+      const requestCount = currentRequests.filter(r => r.recordType === 'request').length;
+      if (requestCount >= 999) {
+        showToast('Batas maksimum 999 permintaan telah tercapai. Mohon hapus beberapa permintaan terlebih dahulu.', true);
+        return;
+      }
+      
+      const submitBtn = document.getElementById('submitRequestBtn');
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Mengirim...';
+      
+      try {
+        // LET ADAPTER COMPUTE documentNumber (safer)
+        const documentNumber = "";
+        const year = document.getElementById('yearSelect').value;
+        const workUnit = document.getElementById('workUnitSelect').value;
+        const items = getItemsFromTable();
+        const submissionDate = document.getElementById('submissionDate').value;
+        const submissionLocation = document.getElementById('submissionLocation').value.trim();
+        const requesterName = document.getElementById('requesterName').value.trim();
+        const requesterNIP = document.getElementById('requesterNIP').value.trim();
+        
+        const requestData = {
+          recordType: 'request',
+          documentNumber: documentNumber,
+          year: year,
+          workUnit: workUnit,
+          items: JSON.stringify(items),
+          submissionDate: submissionDate,
+          submissionLocation: submissionLocation,
+          requesterName: requesterName,
+          requesterNIP: requesterNIP,
+          status: 'Pending Verification',
+          verifierName: "",
+          verifierNIP: "",
+          verificationDate: "",
+          supervisorName: "",
+          supervisorNIP: "",
+          supervisorApprovalDate: "",
+          rejectionReason: "",
+          rejectedBy: "",
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          form_title: "",
+          budget_year: "",
+          organization_name: "",
+          doc_number_format: "",
+          logo_url: "",
+          whatsapp_number: "",
+          submit_button_text: ""
+        };
+        
+        const result = await window.dataSdk.create(requestData);
+        
+        if (result.isOk) {
+          showToast('Permintaan berhasil dikirim dan tersimpan!');
+          resetForm();
+        } else {
+          console.error('Submit error:', result.error);
+          showToast('Gagal mengirim permintaan: ' + (result.error.message || 'Error tidak diketahui'), true);
+        }
+      } catch (error) {
+        console.error('Submit exception:', error);
+        showToast('Gagal mengirim permintaan: ' + error.message, true);
+      } finally {
+        submitBtn.disabled = false;
+        const settings = getCurrentSettings();
+        submitBtn.textContent = settings.submit_button_text;
+      }
+    }
+
+    // Reset form
+    function resetForm() {
+      document.getElementById('workUnitSelect').value = '';
+      document.getElementById('itemsTableBody').innerHTML = '';
+      document.getElementById('requesterName').value = '';
+      document.getElementById('requesterNIP').value = '';
+      initSubmissionDate();
+      updateDocumentNumber();
+      addItemRow();
+    }
+
+    // Switch view
+    function switchView(view) {
+      currentView = view;
+      
+      document.getElementById('requestFormView').classList.add('hidden');
+      document.getElementById('allRequestsView').classList.add('hidden');
+      document.getElementById('verifierView').classList.add('hidden');
+      document.getElementById('supervisorView').classList.add('hidden');
+      document.getElementById('requestDetailView').classList.add('hidden');
+      document.getElementById('settingsView').classList.add('hidden');
+      
+      if (view === 'form') {
+        document.getElementById('requestFormView').classList.remove('hidden');
+      } else if (view === 'requests') {
+        document.getElementById('allRequestsView').classList.remove('hidden');
+        renderAllRequests();
+      } else if (view === 'verifier') {
+        document.getElementById('verifierView').classList.remove('hidden');
+        renderVerifierDashboard();
+      } else if (view === 'supervisor') {
+        document.getElementById('supervisorView').classList.remove('hidden');
+        renderSupervisorDashboard();
+      } else if (view === 'detail') {
+        document.getElementById('requestDetailView').classList.remove('hidden');
+      } else if (view === 'settings') {
+        document.getElementById('settingsView').classList.remove('hidden');
+        loadSettingsForm();
+      }
+    }
+
+    // Generate WhatsApp URL
+    function getWhatsAppUrl(requestId) {
+      const request = currentRequests.find(r => r.__backendId === requestId);
+      if (!request) return null;
+      
+      const settings = getCurrentSettings();
+      const whatsappNumber = settings.whatsapp_number;
+      
+      if (!whatsappNumber || whatsappNumber.trim() === '') {
+        return null;
+      }
+      
+      const items = JSON.parse(request.items);
+      const itemsList = items.map((item, idx) => `${idx + 1}. ${item.name} (${item.quantity})`).join('%0A');
+      
+      let message = `*Pengingat Permintaan ATK*%0A%0A`;
+      message += `*Dokumen:* ${request.documentNumber}%0A`;
+      message += `*Status:* ${request.status}%0A`;
+      message += `*Bagian/Fungsi:* ${request.workUnit}%0A`;
+      message += `*Tahun:* ${request.year}%0A%0A`;
+      message += `*Pemohon:*%0A`;
+      message += `Nama: ${request.requesterName}%0A`;
+      message += `NIP: ${request.requesterNIP}%0A%0A`;
+      message += `*Item yang Diminta:*%0A${itemsList}%0A%0A`;
+      message += `*Tanggal Pengajuan:* ${formatDate(request.submissionDate)}%0A`;
+      message += `*Lokasi:* ${request.submissionLocation}%0A%0A`;
+      
+      if (request.status === 'Pending Verification') {
+        message += `⚠️ Permintaan ini menunggu verifikasi. Mohon tinjau dan verifikasi.`;
+      } else if (request.status === 'Verified - Pending Approval') {
+        message += `⚠️ Permintaan ini menunggu persetujuan akhir dari Penanggung Jawab.`;
+      } else if (request.status === 'Fully Approved') {
+        message += `✅ Permintaan ini telah disetujui penuh dan siap diproses.`;
+      }
+      
+      // Using wa.me - works on all devices and not blocked
+      return `https://wa.me/${whatsappNumber}?text=${message}`;
+    }
+    
+    // Open WhatsApp - simple single tab approach
+    function openWhatsApp(requestId) {
+      const url = getWhatsAppUrl(requestId);
+      if (!url) {
+        showToast('Nomor WhatsApp belum diatur. Silakan ke Pengaturan terlebih dahulu.', true);
+        return;
+      }
+
+      // Simple window.open - works on most devices
+      window.open(url, '_blank', 'noopener,noreferrer');
+      showToast('Membuka WhatsApp...');
+    }
+
+    // Load settings form
+    function loadSettingsForm() {
+      const settings = getCurrentSettings();
+      
+      document.getElementById('settingFormTitle').value = settings.form_title;
+      document.getElementById('settingBudgetYear').value = settings.budget_year;
+      document.getElementById('settingOrganizationName').value = settings.organization_name;
+      document.getElementById('settingDocNumberFormat').value = settings.doc_number_format;
+      document.getElementById('settingLogoUrl').value = settings.logo_url;
+      document.getElementById('settingWhatsAppNumber').value = settings.whatsapp_number;
+      
+      updateSettingsPreview();
+    }
+
+    // Update settings preview
+    function updateSettingsPreview() {
+      const formTitle = document.getElementById('settingFormTitle').value || defaultConfig.form_title;
+      const budgetYear = document.getElementById('settingBudgetYear').value || defaultConfig.budget_year;
+      const organizationName = document.getElementById('settingOrganizationName').value || defaultConfig.organization_name;
+      const logoUrl = document.getElementById('settingLogoUrl').value || defaultConfig.logo_url;
+      
+      document.getElementById('previewTitle').textContent = formTitle;
+      document.getElementById('previewBudgetYear').textContent = `Tahun Anggaran ${budgetYear}`;
+      document.getElementById('previewOrganization').textContent = organizationName;
+      document.getElementById('previewLogo').innerHTML = getLogoHTML(logoUrl);
+    }
+
+    // Save settings to database
+    async function saveSettings() {
+      const formTitle = document.getElementById('settingFormTitle').value.trim();
+      const budgetYear = document.getElementById('settingBudgetYear').value.trim();
+      const organizationName = document.getElementById('settingOrganizationName').value.trim();
+      const docNumberFormat = document.getElementById('settingDocNumberFormat').value.trim();
+      const logoUrl = document.getElementById('settingLogoUrl').value.trim();
+      const whatsappNumber = document.getElementById('settingWhatsAppNumber').value.trim();
+      
+      if (!formTitle || !budgetYear || !organizationName || !docNumberFormat) {
+        showToast('Mohon isi semua field yang wajib', true);
+        return;
+      }
+      
+      const saveBtn = document.getElementById('saveSettingsBtn');
+      saveBtn.disabled = true;
+      saveBtn.textContent = 'Menyimpan...';
+      
+      try {
+        const settingsData = {
+          recordType: 'settings',
+          form_title: formTitle,
+          budget_year: budgetYear,
+          organization_name: organizationName,
+          doc_number_format: docNumberFormat,
+          logo_url: logoUrl,
+          whatsapp_number: whatsappNumber,
+          submit_button_text: defaultConfig.submit_button_text,
+          documentNumber: "",
+          year: "",
+          workUnit: "",
+          items: "",
+          submissionDate: "",
+          submissionLocation: "",
+          requesterName: "",
+          requesterNIP: "",
+          status: "",
+          verifierName: "",
+          verifierNIP: "",
+          verificationDate: "",
+          supervisorName: "",
+          supervisorNIP: "",
+          supervisorApprovalDate: "",
+          rejectionReason: "",
+          rejectedBy: "",
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
+        
+        let result;
+        if (appSettings && appSettings.__backendId) {
+          // Update existing settings
+          result = await window.dataSdk.update({
+            ...settingsData,
+            __backendId: appSettings.__backendId
+          });
+        } else {
+          // Create new settings
+          result = await window.dataSdk.create(settingsData);
+        }
+        
+        if (result.isOk) {
+          showToast('Settings berhasil disimpan!');
+          updateDocumentNumber();
+          switchView('form');
+        } else {
+          console.error('Save settings error:', result.error);
+          showToast('Gagal menyimpan settings: ' + (result.error.message || 'Unknown error'), true);
+        }
+      } catch (error) {
+        console.error('Save settings exception:', error);
+        showToast('Gagal menyimpan settings: ' + error.message, true);
+      } finally {
+        saveBtn.disabled = false;
+        saveBtn.textContent = '💾 Save Settings';
+      }
+    }
+
+    // Delete request
+    async function deleteRequest(requestId, event) {
+      // Stop event propagation to prevent triggering viewRequestDetail
+      if (event) {
+        event.stopPropagation();
+      }
+      
+      const request = currentRequests.find(r => r.__backendId === requestId);
+      if (!request) {
+        showToast('Permintaan tidak ditemukan', true);
+        return;
+      }
+      
+      // Show inline confirmation
+      const confirmBtn = event.target;
+      const originalText = confirmBtn.textContent;
+      const originalClass = confirmBtn.className;
+      
+      confirmBtn.textContent = 'Yakin Hapus?';
+      confirmBtn.className = 'px-3 py-1 bg-red-700 text-white rounded-lg font-semibold text-sm';
+      
+      // Create cancel button
+      const cancelBtn = document.createElement('button');
+      cancelBtn.textContent = 'Batal';
+      cancelBtn.className = 'px-3 py-1 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors text-sm font-semibold ml-2';
+      cancelBtn.onclick = (e) => {
+        e.stopPropagation();
+        confirmBtn.textContent = originalText;
+        confirmBtn.className = originalClass;
+        cancelBtn.remove();
+      };
+      
+      confirmBtn.parentElement.appendChild(cancelBtn);
+      
+      // Change confirm button to actually delete
+      confirmBtn.onclick = async (e) => {
+        e.stopPropagation();
+        confirmBtn.disabled = true;
+        confirmBtn.textContent = 'Menghapus...';
+        
+        try {
+          const result = await window.dataSdk.delete(request);
+          
+          if (result.isOk) {
+            showToast('Permintaan berhasil dihapus');
+          } else {
+            console.error('Delete error:', result.error);
+            showToast('Gagal menghapus: ' + (result.error.message || 'Error tidak diketahui'), true);
+            confirmBtn.textContent = originalText;
+            confirmBtn.className = originalClass;
+            confirmBtn.disabled = false;
+            cancelBtn.remove();
+          }
+        } catch (error) {
+          console.error('Delete exception:', error);
+          showToast('Gagal menghapus: ' + error.message, true);
+          confirmBtn.textContent = originalText;
+          confirmBtn.className = originalClass;
+          confirmBtn.disabled = false;
+          cancelBtn.remove();
+        }
+      };
+    }
+
+    // Render all requests
+    function renderAllRequests() {
+      const container = document.getElementById('allRequestsList');
+      const requests = currentRequests.filter(r => r.recordType === 'request');
+      
+      if (requests.length === 0) {
+        container.innerHTML = '<p class="text-gray-500 text-center py-8">Belum ada permintaan</p>';
+        return;
+      }
+      
+      // Sort by creation date, newest first
+      const sortedRequests = [...requests].sort((a, b) => {
+        return new Date(b.createdAt) - new Date(a.createdAt);
+      });
+      
+      container.innerHTML = sortedRequests.map(request => {
+        const settings = getCurrentSettings();
+        const whatsappNumber = settings.whatsapp_number;
+        const hasWhatsApp = whatsappNumber && whatsappNumber.trim() !== '';
+        
+        return `
+          <div class="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
+            <div class="flex justify-between items-start mb-2">
+              <div class="flex-1 cursor-pointer" onclick="viewRequestDetail('${request.__backendId}')">
+                <h3 class="font-bold text-lg text-gray-800">${request.documentNumber}</h3>
+                <p class="text-sm text-gray-600">${request.workUnit} - ${request.year}</p>
+              </div>
+              <div class="flex gap-2 items-start">
+                <span class="px-3 py-1 rounded-full text-sm font-semibold ${getStatusColor(request.status)}">
+                  ${request.status}
+                </span>
+                ${hasWhatsApp ? `
+                  <button onclick="openWhatsApp('${request.__backendId}')" class="px-3 py-1 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors flex items-center gap-1 text-sm font-semibold whitespace-nowrap" title="Buka WhatsApp">
+                    📱 Buka WA
+                  </button>
+                ` : ''}
+                <button onclick="deleteRequest('${request.__backendId}', event)" class="px-3 py-1 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors text-sm font-semibold" title="Hapus Permintaan">
+                  🗑️ Hapus
+                </button>
+              </div>
+            </div>
+            <div class="cursor-pointer" onclick="viewRequestDetail('${request.__backendId}')">
+              <p class="text-sm text-gray-700 mb-2"><strong>Requester:</strong> ${request.requesterName} (${request.requesterNIP})</p>
+              <p class="text-sm text-gray-600"><strong>Date:</strong> ${formatDate(request.submissionDate)}</p>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    // Render verifier dashboard
+    function renderVerifierDashboard() {
+      const container = document.getElementById('verifierRequestsList');
+      const pendingRequests = currentRequests.filter(r => r.recordType === 'request' && r.status === 'Pending Verification');
+      
+      if (pendingRequests.length === 0) {
+        container.innerHTML = '<p class="text-gray-500 text-center py-8">Tidak ada permintaan yang menunggu verifikasi</p>';
+        return;
+      }
+      
+      container.innerHTML = pendingRequests.map(request => `
+        <div class="border border-yellow-200 bg-yellow-50 rounded-lg p-4 hover:shadow-md transition-shadow cursor-pointer" onclick="viewRequestDetail('${request.__backendId}')">
+          <div class="flex justify-between items-start mb-2">
+            <div>
+              <h3 class="font-bold text-lg text-gray-800">${request.documentNumber}</h3>
+              <p class="text-sm text-gray-600">${request.workUnit} - ${request.year}</p>
+            </div>
+            <span class="px-3 py-1 rounded-full text-sm font-semibold bg-yellow-200 text-yellow-800">
+              Step 1: Pending Verification
+            </span>
+          </div>
+          <p class="text-sm text-gray-700 mb-2"><strong>Requester:</strong> ${request.requesterName} (${request.requesterNIP})</p>
+          <p class="text-sm text-gray-600 mb-3"><strong>Date:</strong> ${formatDate(request.submissionDate)}</p>
+          <p class="text-sm text-gray-700"><strong>Items:</strong> ${JSON.parse(request.items).length} item(s)</p>
+        </div>
+      `).join('');
+    }
+
+    // Render supervisor dashboard
+    function renderSupervisorDashboard() {
+      const container = document.getElementById('supervisorRequestsList');
+      const pendingRequests = currentRequests.filter(r => r.recordType === 'request' && r.status === 'Verified - Pending Approval');
+      
+      if (pendingRequests.length === 0) {
+        container.innerHTML = '<p class="text-gray-500 text-center py-8">Tidak ada permintaan yang menunggu persetujuan akhir</p>';
+        return;
+      }
+      
+      container.innerHTML = pendingRequests.map(request => `
+        <div class="border border-blue-200 bg-blue-50 rounded-lg p-4 hover:shadow-md transition-shadow cursor-pointer" onclick="viewRequestDetail('${request.__backendId}')">
+          <div class="flex justify-between items-start mb-2">
+            <div>
+              <h3 class="font-bold text-lg text-gray-800">${request.documentNumber}</h3>
+              <p class="text-sm text-gray-600">${request.workUnit} - ${request.year}</p>
+            </div>
+            <span class="px-3 py-1 rounded-full text-sm font-semibold bg-blue-200 text-blue-800">
+              Step 2: Pending Final Approval
+            </span>
+          </div>
+          <p class="text-sm text-gray-700 mb-2"><strong>Requester:</strong> ${request.requesterName} (${request.requesterNIP})</p>
+          <p class="text-sm text-gray-700 mb-2"><strong>Verified by:</strong> ${request.verifierName} (${request.verifierNIP})</p>
+          <p class="text-sm text-gray-600 mb-3"><strong>Verification Date:</strong> ${formatDate(request.verificationDate)}</p>
+          <p class="text-sm text-gray-700"><strong>Items:</strong> ${JSON.parse(request.items).length} item(s)</p>
+        </div>
+      `).join('');
+    }
+
+    // Print document function
+    function printDocument() {
+      // Ensure we're in detail view before printing
+      if (currentView !== 'detail') {
+        showToast('Mohon buka detail permintaan terlebih dahulu', true);
+        return;
+      }
+      
+      // Add a small delay to ensure DOM is fully rendered
+      setTimeout(() => {
+        window.print();
+      }, 100);
+    }
+
+    // View request detail
+    function viewRequestDetail(requestId) {
+      const request = currentRequests.find(r => r.__backendId === requestId);
+      if (!request) return;
+      
+      editingRequestId = requestId;
+      const items = JSON.parse(request.items);
+      const isPendingVerification = request.status === 'Pending Verification';
+      const isPendingApproval = request.status === 'Verified - Pending Approval';
+      const isFullyApproved = request.status === 'Fully Approved';
+      const isRejected = request.status.startsWith('Rejected');
+      
+      const settings = getCurrentSettings();
+      
+      const detailView = document.getElementById('requestDetailView');
+      const backView = currentView === 'verifier' ? 'verifier' : currentView === 'supervisor' ? 'supervisor' : 'requests';
+      detailView.innerHTML = `
+        <div class="no-print mb-4">
+          <button onclick="switchView('${backView}')" class="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors">
+            ← Back
+          </button>
+          <button onclick="printDocument()" class="ml-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors">
+            🖨️ Print / Export PDF
+          </button>
+        </div>
+
+        <!-- Header -->
+        <div class="mb-8 border-b-2 border-gray-800 pb-6">
+          <div class="flex items-center justify-center gap-6">
+            <!-- Logo -->
+            <div class="flex-shrink-0 logo-container">
+              ${getLogoHTML(settings.logo_url)}
+            </div>
+            
+            <!-- Title section -->
+            <div class="text-center flex-grow">
+              <h1 class="text-3xl font-bold text-gray-800 mb-2">${settings.form_title}</h1>
+              <p class="text-gray-700 text-lg mb-1">Tahun Anggaran ${settings.budget_year}</p>
+              <p class="text-gray-600">${settings.organization_name}</p>
+            </div>
+            
+            <!-- Spacer for balance (invisible) -->
+            <div class="flex-shrink-0 w-20"></div>
+          </div>
+        </div>
+
+        <!-- Document Info -->
+        <div class="grid grid-cols-3 gap-4 mb-6">
+          <div>
+            <p class="text-sm font-semibold text-gray-700">Document Number</p>
+            <p class="text-gray-900">${request.documentNumber}</p>
+          </div>
+          <div>
+            <p class="text-sm font-semibold text-gray-700">Year</p>
+            <p class="text-gray-900">${request.year}</p>
+          </div>
+          <div>
+            <p class="text-sm font-semibold text-gray-700">Work Unit</p>
+            <p class="text-gray-900">${request.workUnit}</p>
+          </div>
+        </div>
+
+        <!-- Items Table -->
+        <div class="mb-6">
+          <h2 class="text-xl font-bold text-gray-800 mb-4">ATK Items</h2>
+          <table class="w-full border-collapse border border-gray-300">
+            <thead>
+              <tr class="bg-gray-100">
+                <th class="border border-gray-300 px-4 py-3 text-left font-semibold text-gray-700">No</th>
+                <th class="border border-gray-300 px-4 py-3 text-left font-semibold text-gray-700">Item Name</th>
+                <th class="border border-gray-300 px-4 py-3 text-left font-semibold text-gray-700">Quantity</th>
+                <th class="border border-gray-300 px-4 py-3 text-left font-semibold text-gray-700">Notes / Remarks</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${items.map((item, index) => `
+                <tr>
+                  <td class="border border-gray-300 px-4 py-2 text-center">${index + 1}</td>
+                  <td class="border border-gray-300 px-4 py-2">${item.name}</td>
+                  <td class="border border-gray-300 px-4 py-2">${item.quantity}</td>
+                  <td class="border border-gray-300 px-4 py-2">${item.notes || '-'}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Submission Info -->
+        <div class="mb-6">
+          <p class="text-gray-700"><strong>Submission:</strong> ${request.submissionLocation}, ${formatDate(request.submissionDate)}</p>
+          <p class="text-gray-700 mt-2"><strong>Status:</strong> <span class="px-3 py-1 rounded-full text-sm font-semibold ${getStatusColor(request.status)}">${request.status}</span></p>
+        </div>
+
+        <!-- Requester Section -->
+        <div class="border-t-2 border-gray-200 pt-6 mb-6">
+          <h2 class="text-xl font-bold text-gray-800 mb-4">Requester Information</h2>
+          <div class="grid grid-cols-2 gap-4 mb-4">
+            <div>
+              <p class="text-sm font-semibold text-gray-700">Name</p>
+              <p class="text-gray-900">${request.requesterName}</p>
+            </div>
+            <div>
+              <p class="text-sm font-semibold text-gray-700">NIP</p>
+              <p class="text-gray-900">${request.requesterNIP}</p>
+            </div>
+          </div>
+          <div class="digital-signature">
+            <p class="text-green-700 font-semibold mb-1">✓ DIGITALLY SIGNED</p>
+            <p class="text-gray-800"><strong>Signed by:</strong> ${request.requesterName}</p>
+            <p class="text-gray-700"><strong>NIP:</strong> ${request.requesterNIP}</p>
+            <p class="text-gray-600 text-sm"><strong>Date:</strong> ${formatDate(request.submissionDate)}</p>
+            <p class="text-gray-600 text-sm"><strong>Timestamp:</strong> ${formatTimestamp(request.createdAt)}</p>
+          </div>
+        </div>
+
+        ${isPendingVerification ? `
+          <!-- Verifikator Section -->
+          <div class="border-t-2 border-gray-200 pt-6 no-print">
+            <h2 class="text-xl font-bold text-gray-800 mb-4">Verifikator Section (Step 1 of 2)</h2>
+            
+            <div class="grid grid-cols-2 gap-4 mb-4">
+              <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-2">Verifikator Name *</label>
+                <input type="text" id="verifierName" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+              </div>
+              <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-2">Verifikator NIP *</label>
+                <input type="text" id="verifierNIP" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+              </div>
+            </div>
+
+            <div class="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <p class="text-sm text-blue-800">
+                <strong>ℹ️ Digital Signature:</strong> Your verification will be digitally signed with your name, NIP, and timestamp.
+              </p>
+            </div>
+
+            <div class="flex gap-4">
+              <button onclick="verifyRequest()" class="flex-1 px-6 py-3 bg-green-600 text-white rounded-lg font-bold hover:bg-green-700 transition-colors">
+                ✓ Verify & Send to Penanggung Jawab
+              </button>
+              <button onclick="showRejectModal('verifier')" class="flex-1 px-6 py-3 bg-red-600 text-white rounded-lg font-bold hover:bg-red-700 transition-colors">
+                ✗ Reject Request
+              </button>
+            </div>
+          </div>
+        ` : isPendingApproval ? `
+          <!-- Penanggung Jawab Section -->
+          <div class="border-t-2 border-gray-200 pt-6">
+            <h2 class="text-xl font-bold text-gray-800 mb-6 text-center">Verification Status</h2>
+            
+            <div class="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg">
+              <p class="text-green-800 font-semibold mb-2">✓ Step 1: Verified by Verifikator</p>
+              <p class="text-sm text-gray-700"><strong>Verifikator:</strong> ${request.verifierName} (${request.verifierNIP})</p>
+              <p class="text-sm text-gray-600"><strong>Date:</strong> ${formatDate(request.verificationDate)}</p>
+            </div>
+
+            <div class="no-print">
+              <h2 class="text-xl font-bold text-gray-800 mb-4">Penanggung Jawab Final Approval (Step 2 of 2)</h2>
+              
+              <div class="grid grid-cols-2 gap-4 mb-4">
+                <div>
+                  <label class="block text-sm font-semibold text-gray-700 mb-2">Penanggung Jawab Name *</label>
+                  <input type="text" id="supervisorName" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div>
+                  <label class="block text-sm font-semibold text-gray-700 mb-2">Penanggung Jawab NIP *</label>
+                  <input type="text" id="supervisorNIP" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                </div>
+              </div>
+
+              <div class="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <p class="text-sm text-blue-800">
+                  <strong>ℹ️ Digital Signature:</strong> Your final approval will be digitally signed with your name, NIP, and timestamp.
+                </p>
+              </div>
+
+              <div class="flex gap-4">
+                <button onclick="approveRequestFinal()" class="flex-1 px-6 py-3 bg-green-600 text-white rounded-lg font-bold hover:bg-green-700 transition-colors">
+                  ✓ Give Final Approval
+                </button>
+                <button onclick="showRejectModal('supervisor')" class="flex-1 px-6 py-3 bg-red-600 text-white rounded-lg font-bold hover:bg-red-700 transition-colors">
+                  ✗ Reject Request
+                </button>
+              </div>
+            </div>
+          </div>
+        ` : `
+          <!-- Goods Release Section (For Fully Approved Requests) -->
+          <div class="border-t-2 border-gray-200 pt-6">
+            <h2 class="text-xl font-bold text-gray-800 mb-6 text-center">GOODS RELEASE SECTION</h2>
+            
+            <div class="grid grid-cols-3 gap-6 mb-6">
+              <div class="text-center">
+                <p class="text-sm font-semibold text-gray-700 mb-4">Verifikator</p>
+                ${request.verifierName ? `
+                  <div class="digital-signature mx-auto" style="max-width: 300px;">
+                    <p class="text-green-700 font-semibold mb-1">✓ DIGITALLY SIGNED</p>
+                    <p class="text-gray-800 text-sm"><strong>Signed by:</strong> ${request.verifierName}</p>
+                    <p class="text-gray-700 text-sm"><strong>NIP:</strong> ${request.verifierNIP}</p>
+                    <p class="text-gray-600 text-xs"><strong>Date:</strong> ${formatDate(request.verificationDate)}</p>
+                  </div>
+                ` : '<p class="text-gray-500 text-sm">Not verified</p>'}
+              </div>
+              
+              <div class="text-center">
+                <p class="text-sm font-semibold text-gray-700 mb-4">Penanggung Jawab</p>
+                ${request.supervisorName ? `
+                  <div class="digital-signature mx-auto" style="max-width: 300px;">
+                    <p class="text-green-700 font-semibold mb-1">✓ DIGITALLY SIGNED</p>
+                    <p class="text-gray-800 text-sm"><strong>Signed by:</strong> ${request.supervisorName}</p>
+                    <p class="text-gray-700 text-sm"><strong>NIP:</strong> ${request.supervisorNIP}</p>
+                    <p class="text-gray-600 text-xs"><strong>Date:</strong> ${formatDate(request.supervisorApprovalDate)}</p>
+                  </div>
+                ` : '<p class="text-gray-500 text-sm">Not approved</p>'}
+              </div>
+
+              <div class="text-center">
+                <p class="text-sm font-semibold text-gray-700 mb-4">Requester</p>
+                <div class="digital-signature mx-auto" style="max-width: 300px;">
+                  <p class="text-green-700 font-semibold mb-1">✓ DIGITALLY SIGNED</p>
+                  <p class="text-gray-800 text-sm"><strong>Signed by:</strong> ${request.requesterName}</p>
+                  <p class="text-gray-700 text-sm"><strong>NIP:</strong> ${request.requesterNIP}</p>
+                  <p class="text-gray-600 text-xs"><strong>Date:</strong> ${formatDate(request.submissionDate)}</p>
+                </div>
+              </div>
+            </div>
+
+            ${isRejected && request.rejectionReason ? `
+              <div class="mt-6 p-4 bg-red-50 border border-red-200 rounded-lg">
+                <p class="text-sm font-semibold text-red-800 mb-2">Rejected by: ${request.rejectedBy}</p>
+                <p class="text-sm font-semibold text-red-800 mb-2">Rejection Reason:</p>
+                <p class="text-red-700">${request.rejectionReason}</p>
+              </div>
+            ` : ''}
+          </div>
+        `}
+      `;
+      
+      switchView('detail');
+    }
+
+    // Verify request (Step 1 - Verifikator)
+    async function verifyRequest() {
+      const verifierName = document.getElementById('verifierName').value.trim();
+      const verifierNIP = document.getElementById('verifierNIP').value.trim();
+      
+      if (!verifierName) {
+        showToast('Please enter verifikator name', true);
+        return;
+      }
+      
+      if (!verifierNIP) {
+        showToast('Please enter verifikator NIP', true);
+        return;
+      }
+      
+      const request = currentRequests.find(r => r.__backendId === editingRequestId);
+      if (!request) {
+        showToast('Request not found', true);
+        return;
+      }
+      
+      const verifyBtn = document.querySelector('button[onclick="verifyRequest()"]');
+      if (verifyBtn) {
+        verifyBtn.disabled = true;
+        verifyBtn.textContent = 'Verifying...';
+      }
+      
+      try {
+        const updatedRequest = {
+          ...request,
+          status: 'Verified - Pending Approval',
+          verifierName: verifierName,
+          verifierNIP: verifierNIP,
+          verificationDate: new Date().toISOString().split('T')[0],
+          rejectionReason: "",
+          rejectedBy: "",
+          updatedAt: new Date().toISOString()
+        };
+        
+        const result = await window.dataSdk.update(updatedRequest);
+        
+        if (result.isOk) {
+          showToast('Request verified! Sent to Penanggung Jawab for final approval');
+          switchView('verifier');
+        } else {
+          console.error('Update failed:', result.error);
+          showToast('Failed to verify: ' + (result.error.message || 'Unknown error'), true);
+        }
+      } catch (error) {
+        console.error('Exception:', error);
+        showToast('Failed to verify: ' + error.message, true);
+      } finally {
+        if (verifyBtn) {
+          verifyBtn.disabled = false;
+          verifyBtn.textContent = '✓ Verify & Send to Penanggung Jawab';
+        }
+      }
+    }
+
+    // Final Approve request (Step 2 - Penanggung Jawab)
+    async function approveRequestFinal() {
+      const supervisorName = document.getElementById('supervisorName').value.trim();
+      const supervisorNIP = document.getElementById('supervisorNIP').value.trim();
+      
+      if (!supervisorName) {
+        showToast('Please enter penanggung jawab name', true);
+        return;
+      }
+      
+      if (!supervisorNIP) {
+        showToast('Please enter penanggung jawab NIP', true);
+        return;
+      }
+      
+      const request = currentRequests.find(r => r.__backendId === editingRequestId);
+      if (!request) {
+        showToast('Request not found', true);
+        return;
+      }
+      
+      const approveBtn = document.querySelector('button[onclick="approveRequestFinal()"]');
+      if (approveBtn) {
+        approveBtn.disabled = true;
+        approveBtn.textContent = 'Approving...';
+      }
+      
+      try {
+        const updatedRequest = {
+          ...request,
+          status: 'Fully Approved',
+          supervisorName: supervisorName,
+          supervisorNIP: supervisorNIP,
+          supervisorApprovalDate: new Date().toISOString().split('T')[0],
+          rejectionReason: "",
+          rejectedBy: "",
+          updatedAt: new Date().toISOString()
+        };
+        
+        const result = await window.dataSdk.update(updatedRequest);
+        
+        if (result.isOk) {
+          showToast('Request fully approved! Ready for printing');
+          switchView('supervisor');
+        } else {
+          console.error('Update failed:', result.error);
+          showToast('Failed to approve: ' + (result.error.message || 'Unknown error'), true);
+        }
+      } catch (error) {
+        console.error('Exception:', error);
+        showToast('Failed to approve: ' + error.message, true);
+      } finally {
+        if (approveBtn) {
+          approveBtn.disabled = false;
+          approveBtn.textContent = '✓ Give Final Approval';
+        }
+      }
+    }
+
+    // Show reject modal
+    function showRejectModal(role) {
+      const modal = document.createElement('div');
+      modal.className = 'modal-backdrop';
+      modal.setAttribute('data-reject-role', role);
+      modal.innerHTML = `
+        <div class="modal-content">
+          <h3 class="text-xl font-bold text-gray-800 mb-4">Reject Request</h3>
+          <p class="text-gray-600 mb-4">Please provide a reason for rejection:</p>
+          <textarea id="rejectionReasonInput" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 mb-4" rows="4" placeholder="Enter rejection reason..."></textarea>
+          <div class="flex gap-4">
+            <button onclick="closeRejectModal()" class="flex-1 px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors">
+              Cancel
+            </button>
+            <button onclick="confirmReject()" class="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors">
+              Confirm Reject
+            </button>
+          </div>
+        </div>
+      `;
+      
+      document.body.appendChild(modal);
+    }
+
+    function closeRejectModal() {
+      const modal = document.querySelector('.modal-backdrop');
+      if (modal) modal.remove();
+    }
+
+    async function confirmReject() {
+      const reason = document.getElementById('rejectionReasonInput').value.trim();
+      
+      if (!reason) {
+        showToast('Please provide a rejection reason', true);
+        return;
+      }
+      
+      const modal = document.querySelector('.modal-backdrop');
+      const role = modal.getAttribute('data-reject-role');
+      
+      const request = currentRequests.find(r => r.__backendId === editingRequestId);
+      if (!request) return;
+      
+      let updatedRequest;
+      
+      if (role === 'verifier') {
+        const verifierName = document.getElementById('verifierName').value.trim();
+        const verifierNIP = document.getElementById('verifierNIP').value.trim();
+        
+        if (!verifierName || !verifierNIP) {
+          showToast('Please enter verifikator name and NIP', true);
+          return;
+        }
+        
+        updatedRequest = {
+          ...request,
+          status: 'Rejected by Verifier',
+          verifierName: verifierName,
+          verifierNIP: verifierNIP,
+          verificationDate: new Date().toISOString().split('T')[0],
+          rejectionReason: reason,
+          rejectedBy: 'Verifikator',
+          updatedAt: new Date().toISOString()
+        };
+      } else if (role === 'supervisor') {
+        const supervisorName = document.getElementById('supervisorName').value.trim();
+        const supervisorNIP = document.getElementById('supervisorNIP').value.trim();
+        
+        if (!supervisorName || !supervisorNIP) {
+          showToast('Please enter penanggung jawab name and NIP', true);
+          return;
+        }
+        
+        updatedRequest = {
+          ...request,
+          status: 'Rejected by Supervisor',
+          supervisorName: supervisorName,
+          supervisorNIP: supervisorNIP,
+          supervisorApprovalDate: new Date().toISOString().split('T')[0],
+          rejectionReason: reason,
+          rejectedBy: 'Penanggung Jawab',
+          updatedAt: new Date().toISOString()
+        };
+      }
+      
+      const result = await window.dataSdk.update(updatedRequest);
+      
+      if (result.isOk) {
+        showToast('Request rejected');
+        closeRejectModal();
+        switchView(role === 'verifier' ? 'verifier' : 'supervisor');
+      } else {
+        console.error('Reject error:', result.error);
+        showToast('Failed to reject: ' + (result.error.message || 'Unknown error'), true);
+      }
+    }
+
+    // Generate logo HTML
+    function getLogoHTML(logoUrl) {
+      if (logoUrl && logoUrl.trim() !== '') {
+        return `<img src="${logoUrl}" alt="Organization Logo" class="w-20 h-20 object-contain" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+                <div style="display:none;">
+                  <svg width="80" height="80" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M50 5 L85 20 L85 50 Q85 75 50 95 Q15 75 15 50 L15 20 Z" fill="#1e40af" stroke="#1e3a8a" stroke-width="2"/>
+                    <path d="M50 15 L75 25 L75 50 Q75 70 50 85 Q25 70 25 50 L25 25 Z" fill="#3b82f6"/>
+                    <text x="50" y="45" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="white" text-anchor="middle">BPS</text>
+                    <rect x="35" y="55" width="6" height="15" fill="white" opacity="0.9"/>
+                    <rect x="44" y="50" width="6" height="20" fill="white" opacity="0.9"/>
+                    <rect x="53" y="52" width="6" height="18" fill="white" opacity="0.9"/>
+                    <rect x="62" y="48" width="6" height="22" fill="white" opacity="0.9"/>
+                  </svg>
+                </div>`;
+      } else {
+        return `<svg width="80" height="80" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M50 5 L85 20 L85 50 Q85 75 50 95 Q15 75 15 50 L15 20 Z" fill="#1e40af" stroke="#1e3a8a" stroke-width="2"/>
+                  <path d="M50 15 L75 25 L75 50 Q75 70 50 85 Q25 70 25 50 L25 25 Z" fill="#3b82f6"/>
+                  <text x="50" y="45" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="white" text-anchor="middle">BPS</text>
+                  <rect x="35" y="55" width="6" height="15" fill="white" opacity="0.9"/>
+                  <rect x="44" y="50" width="6" height="20" fill="white" opacity="0.9"/>
+                  <rect x="53" y="52" width="6" height="18" fill="white" opacity="0.9"/>
+                  <rect x="62" y="48" width="6" height="22" fill="white" opacity="0.9"/>
+                </svg>`;
+      }
+    }
+
+    // Helper functions
+    function getStatusColor(status) {
+      switch (status) {
+        case 'Pending Verification':
+          return 'bg-yellow-200 text-yellow-800';
+        case 'Verified - Pending Approval':
+          return 'bg-blue-200 text-blue-800';
+        case 'Fully Approved':
+          return 'bg-green-200 text-green-800';
+        case 'Rejected by Verifier':
+        case 'Rejected by Supervisor':
+          return 'bg-red-200 text-red-800';
+        default:
+          return 'bg-gray-200 text-gray-800';
+      }
+    }
+
+    function formatDate(dateString) {
+      if (!dateString) return '-';
+      const date = new Date(dateString);
+      const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+      return `${date.getDate()} ${months[date.getMonth()]} ${date.getFullYear()}`;
+    }
+
+    function formatTimestamp(isoString) {
+      if (!isoString) return '-';
+      const date = new Date(isoString);
+      return date.toLocaleString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+      });
+    }
+
+    // Apply settings to UI
+    function applySettingsToUI() {
+      const settings = getCurrentSettings();
+      
+      const formTitle = document.getElementById('formTitle');
+      const budgetYear = document.getElementById('budgetYear');
+      const organizationName = document.getElementById('organizationName');
+      const submitBtn = document.getElementById('submitRequestBtn');
+      const logoContainers = document.querySelectorAll('.logo-container');
+      
+      if (formTitle) {
+        formTitle.textContent = settings.form_title;
+      }
+      
+      if (budgetYear) {
+        budgetYear.textContent = `Tahun Anggaran ${settings.budget_year}`;
+      }
+      
+      if (organizationName) {
+        organizationName.textContent = settings.organization_name;
+      }
+      
+      if (submitBtn) {
+        submitBtn.textContent = settings.submit_button_text;
+      }
+      
+      // Update all logo containers
+      logoContainers.forEach(container => {
+        container.innerHTML = getLogoHTML(settings.logo_url);
+      });
+    }
+
+    // Data SDK handler
+    const dataHandler = {
+      onDataChanged(data) {
+        // Separate settings from requests
+        const settingsRecords = data.filter(r => r.recordType === 'settings');
+        const requestRecords = data.filter(r => r.recordType === 'request');
+        
+        // Use the first settings record (there should only be one)
+        appSettings = settingsRecords.length > 0 ? settingsRecords[0] : null;
+        currentRequests = data;
+        
+        // Apply settings to UI
+        applySettingsToUI();
+        
+        if (currentView === 'requests') {
+          renderAllRequests();
+        } else if (currentView === 'verifier') {
+          renderVerifierDashboard();
+        } else if (currentView === 'supervisor') {
+          renderSupervisorDashboard();
+        } else if (currentView === 'form') {
+          updateDocumentNumber();
+        }
+      }
+    };
+
+    // Element SDK implementation
+    async function onConfigChange(config) {
+      // Element SDK config is not used for this app
+      // All settings are stored in database
+    }
+
+    function mapToCapabilities(config) {
+      return {
+        recolorables: [],
+
+    // ... rest of your inline script unchanged ...
+    // For brevity I omitted rest of inline code in this preview; in your real file
+    // keep the full script content exactly as previously provided (everything after mapToCapabilities)
+  </script>
+</body>
+</html>
