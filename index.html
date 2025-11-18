@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>ATK Request Form - BPS South Jakarta</title>
 
-  <!-- base for GH Pages subpath -->
+  <!-- base untuk GH Pages subpath -->
   <base href="/buildp/">
 
   <!-- Tailwind -->
@@ -13,6 +13,9 @@
 
   <!-- SheetJS for .xlsx export -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+  <!-- Signature Pad (UMD) -->
+  <script src="https://cdn.jsdelivr.net/npm/signature_pad@4.0.0/dist/signature_pad.umd.min.js"></script>
 
   <!-- Safe local data adapter (load BEFORE main script) -->
   <script src="dataAdapter-google-sheets.js"></script>
@@ -24,6 +27,7 @@
     .modal-backdrop{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:999}
     .modal-content{background:#fff;border-radius:12px;padding:24px;max-width:600px;width:92%}
     .digital-signature{border:2px solid #10b981;background:#f0fdf4;padding:16px;border-radius:8px;font-family:'Courier New',monospace}
+    .signature-canvas { border:1px dashed #cbd5e1; border-radius:6px; background:white; }
     @media print { .no-print{display:none!important} }
   </style>
 </head>
@@ -31,9 +35,8 @@
   <div id="app" class="max-w-6xl mx-auto p-4 md:p-8"></div>
 
   <script>
-  // ---------- App (full) ----------
+  // ---------- App (full, with Signature Pad) ----------
   document.addEventListener('DOMContentLoaded', () => {
-    // Default config
     const defaultConfig = {
       form_title: "Form Permintaan ATK",
       budget_year: (new Date()).getFullYear().toString(),
@@ -50,6 +53,16 @@
     let currentView = 'form';
     let editingRequestId = null;
 
+    // Local signature data for current form (transient)
+    let requesterSignatureDataUrl = null;
+    let verifierSignatureDataUrl = null;
+    let supervisorSignatureDataUrl = null;
+
+    // SignaturePad instances
+    let requesterSigPad = null;
+    let verifierSigPad = null;
+    let supervisorSigPad = null;
+
     // Helpers
     function showToast(msg, isError=false){
       const t=document.createElement('div'); t.className='toast' + (isError? ' error':''); t.textContent=msg; document.body.appendChild(t);
@@ -59,10 +72,9 @@
     function formatDate(dateString){ if(!dateString) return '-'; const d=new Date(dateString); const months=['January','February','March','April','May','June','July','August','September','October','November','December']; return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`; }
     function formatTimestamp(iso){ if(!iso) return '-'; const d=new Date(iso); return d.toLocaleString('en-US',{year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}); }
 
-    // Data SDK presence helper
     function ensureDataSdk(){ return window.dataSdk || null; }
 
-    // Render base UI skeleton
+    // Render app skeleton
     const app = document.getElementById('app');
     app.innerHTML = `
       <div class="no-print mb-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
@@ -100,7 +112,7 @@
       <div id="settingsView" class="hidden bg-white rounded-lg shadow-lg p-6 md:p-8"></div>
     `;
 
-    // ---------- Form view ----------
+    // ---------- Render form with requester signature pad ----------
     function renderFormView(){
       const s = getCurrentSettings();
       const v = document.getElementById('requestFormView');
@@ -147,7 +159,25 @@
             <div><label class="block text-sm font-semibold">Nama</label><input id="requesterName" class="w-full px-4 py-2 border rounded"></div>
             <div><label class="block text-sm font-semibold">NIP</label><input id="requesterNIP" class="w-full px-4 py-2 border rounded" placeholder="contoh: 199012345678901234"></div>
           </div>
-          <div class="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg"><p class="text-sm text-blue-800"><strong>ℹ️ Tanda Tangan Digital:</strong> Permintaan Anda akan ditandatangani secara digital.</p></div>
+
+          <div class="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+            <p class="text-sm text-blue-800"><strong>ℹ️ Tanda Tangan Digital:</strong> Permintaan Anda akan ditandatangani secara digital.</p>
+          </div>
+
+          <!-- Signature pad area for requester -->
+          <div class="mb-4">
+            <label class="block text-sm font-semibold mb-2">Tanda Tangan Pemohon (gunakan mouse / touch)</label>
+            <div class="mb-2">
+              <canvas id="requesterSignatureCanvas" class="signature-canvas w-full" style="height:160px;"></canvas>
+            </div>
+            <div class="flex gap-2 mb-4">
+              <button id="requesterClearBtn" class="px-3 py-2 bg-gray-500 text-white rounded">Clear</button>
+              <button id="requesterSaveBtn" class="px-3 py-2 bg-green-600 text-white rounded">Save Signature</button>
+              <div id="requesterSigPreview" class="ml-4"></div>
+            </div>
+            <input type="hidden" id="requesterSignatureInput" />
+          </div>
+
           <button id="submitRequestBtn" class="no-print w-full px-6 py-3 bg-blue-600 text-white rounded-lg font-bold text-lg">${escapeHtml(defaultConfig.submit_button_text)}</button>
         </div>
       `;
@@ -155,11 +185,50 @@
       initSubmissionDate();
       updateDocumentNumber();
       addItemRow();
+      // signature init after elements exist
+      initRequesterSignaturePad();
+
       document.getElementById('addRowBtn').addEventListener('click', addItemRow);
       document.getElementById('submitRequestBtn').addEventListener('click', submitRequest);
     }
 
-    // Form helpers
+    // Signature pad helpers (requester)
+    function initRequesterSignaturePad(){
+      const canvas = document.getElementById('requesterSignatureCanvas');
+      if(!canvas) return;
+      // resize canvas for high DPI
+      fitToContainer(canvas);
+      requesterSigPad = new SignaturePad(canvas, { penColor: "rgb(22, 78, 99)" });
+      // load existing preview if any (not persisted between sessions unless saved in record)
+      document.getElementById('requesterClearBtn').addEventListener('click', ()=> { requesterSigPad.clear(); document.getElementById('requesterSignatureInput').value = ''; requesterSigPreviewClear(); requesterSignatureDataUrl = null; });
+      document.getElementById('requesterSaveBtn').addEventListener('click', ()=> {
+        if(requesterSigPad.isEmpty()){ showToast('Tandatangan kosong — silakan tanda tangan terlebih dahulu', true); return; }
+        const dataUrl = requesterSigPad.toDataURL('image/png');
+        document.getElementById('requesterSignatureInput').value = dataUrl;
+        requesterSignatureDataUrl = dataUrl;
+        renderRequesterSigPreview(dataUrl);
+        showToast('Signature saved (preview shown)');
+      });
+    }
+    function renderRequesterSigPreview(dataUrl){
+      const container = document.getElementById('requesterSigPreview');
+      if(!container) return;
+      container.innerHTML = `<img src="${dataUrl}" alt="signature" style="max-height:80px;border:1px solid #e5e7eb;padding:4px;border-radius:4px;background:white">`;
+    }
+    function requesterSigPreviewClear(){ const c=document.getElementById('requesterSigPreview'); if(c) c.innerHTML=''; }
+
+    // Utility to fit canvas to its container devicePixelRatio-aware
+    function fitToContainer(canvas){
+      const ratio = Math.max(window.devicePixelRatio || 1, 1);
+      const w = canvas.clientWidth;
+      // set height if specified inline style
+      let h = parseInt(canvas.style.height) || canvas.clientHeight || 160;
+      canvas.width = w * ratio;
+      canvas.height = h * ratio;
+      canvas.getContext('2d').scale(ratio, ratio);
+    }
+
+    // Form helpers (items)
     function initYearDropdown(){
       const sel=document.getElementById('yearSelect'); if(!sel) return;
       sel.innerHTML=''; const currentYear=(new Date()).getFullYear();
@@ -191,7 +260,7 @@
       return `${padded}/ATK/${month}/${year}`;
     }
 
-    // Validate + submit
+    // Validate + submit (include requester signature)
     function validateForm(){
       const year=document.getElementById('yearSelect')?document.getElementById('yearSelect').value:''; const workUnit=document.getElementById('workUnitSelect')?document.getElementById('workUnitSelect').value:''; const items=getItemsFromTable(); const requesterName=document.getElementById('requesterName')?document.getElementById('requesterName').value.trim():''; const requesterNIP=document.getElementById('requesterNIP')?document.getElementById('requesterNIP').value.trim():'';
       if(!year){ showToast('Mohon pilih tahun', true); return false; } if(!workUnit){ showToast('Mohon pilih bagian/fungsi', true); return false; } if(items.length===0){ showToast('Mohon tambahkan minimal satu item', true); return false; } if(!requesterName){ showToast('Mohon isi nama pemohon', true); return false; } if(!requesterNIP){ showToast('Mohon isi NIP pemohon', true); return false; } return true;
@@ -201,6 +270,12 @@
       if(!validateForm()) return;
       const btn=document.getElementById('submitRequestBtn'); if(btn){ btn.disabled=true; btn.textContent='Mengirim...'; }
       try{
+        // If user hasn't saved signature yet but drew it, auto-save
+        if(requesterSigPad && !requesterSignatureDataUrl && !requesterSigPad.isEmpty()){
+          requesterSignatureDataUrl = requesterSigPad.toDataURL('image/png');
+          document.getElementById('requesterSignatureInput').value = requesterSignatureDataUrl;
+        }
+
         const documentNumber = generateDocumentNumber();
         const year=document.getElementById('yearSelect').value;
         const workUnit=document.getElementById('workUnitSelect').value;
@@ -230,7 +305,8 @@
           rejectionReason: '',
           rejectedBy: '',
           createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
+          updatedAt: new Date().toISOString(),
+          signatureRequester: requesterSignatureDataUrl || ''
         };
 
         const sdk = ensureDataSdk();
@@ -238,12 +314,9 @@
           const res = await sdk.create(record);
           if(res && res.isOk){
             showToast('Permintaan berhasil dikirim dan tersimpan!');
-            // dataHandler in adapter will call onDataChanged => app will sync currentRequests
             resetForm();
-            // show in verifier dashboard
             renderVerifierDashboard();
           } else {
-            // fallback: adapter refused - push local
             record.__backendId = 'local-'+Math.random().toString(36).slice(2,9);
             currentRequests.push(record);
             saveLocalRequests();
@@ -252,7 +325,6 @@
             resetForm();
           }
         } else {
-          // fallback local
           record.__backendId = 'local-'+Math.random().toString(36).slice(2,9);
           currentRequests.push(record);
           saveLocalRequests();
@@ -264,7 +336,9 @@
       finally{ if(btn){ btn.disabled=false; btn.textContent=getCurrentSettings().submit_button_text; } }
     }
 
-    function resetForm(){ if(document.getElementById('workUnitSelect')) document.getElementById('workUnitSelect').value=''; if(document.getElementById('itemsTableBody')) document.getElementById('itemsTableBody').innerHTML=''; if(document.getElementById('requesterName')) document.getElementById('requesterName').value=''; if(document.getElementById('requesterNIP')) document.getElementById('requesterNIP').value=''; initSubmissionDate(); updateDocumentNumber(); addItemRow(); }
+    function resetForm(){ if(document.getElementById('workUnitSelect')) document.getElementById('workUnitSelect').value=''; if(document.getElementById('itemsTableBody')) document.getElementById('itemsTableBody').innerHTML=''; if(document.getElementById('requesterName')) document.getElementById('requesterName').value=''; if(document.getElementById('requesterNIP')) document.getElementById('requesterNIP').value=''; initSubmissionDate(); updateDocumentNumber(); addItemRow(); // clear signature
+      if(requesterSigPad){ requesterSigPad.clear(); requesterSignatureDataUrl = null; requesterSigPreviewClear(); document.getElementById('requesterSignatureInput').value=''; }
+    }
 
     // ---------- Settings (no Google fields) ----------
     function getCurrentSettings(){
@@ -341,7 +415,7 @@
       switchView('form');
     }
 
-    // ---------- Local persistence helpers (mirror adapter) ----------
+    // ---------- Local persistence ----------
     function saveLocalRequests(){
       try{ localStorage.setItem('atk_requests', JSON.stringify(currentRequests)); }catch(e){ console.warn('saveLocalRequests failed', e); }
     }
@@ -349,7 +423,7 @@
       try{ const raw = localStorage.getItem('atk_requests'); if(raw){ currentRequests = JSON.parse(raw); } else currentRequests = []; }catch(e){ console.warn('loadLocalRequests failed', e); currentRequests = []; }
     }
 
-    // ---------- Render lists ----------
+    // ---------- Render lists (with filters and export) ----------
     function renderAllRequests(){
       const container=document.getElementById('allRequestsList');
       const requests=(currentRequests||[]).filter(r=>r.recordType==='request');
@@ -407,17 +481,25 @@
       }
     }
 
-    // ---------- Detail view ----------
+    // ---------- Detail view (with verifier & supervisor signature pads) ----------
     window.viewRequestDetail = function(id){
       const req = currentRequests.find(r=> (r.__backendId && r.__backendId===id) || (r.documentNumber && r.documentNumber===id));
       if(!req){ showToast('Request not found', true); return; }
       editingRequestId = req.__backendId || req.documentNumber;
       const dv = document.getElementById('requestDetailView');
+
+      // helper to render signature image or fallback text
+      function sigHtml(key, value){
+        if(value && value.trim()!=='') return `<img src="${value}" alt="${key}" style="max-width:260px;border:1px solid #e5e7eb;padding:6px;border-radius:6px;background:white">`;
+        return `<div class="text-gray-500 text-sm">No signature</div>`;
+      }
+
       dv.innerHTML = `
         <div class="no-print mb-4">
           <button onclick="switchView('requests')" class="px-4 py-2 bg-gray-500 text-white rounded">← Back</button>
           <button onclick="window.printDocument && window.printDocument()" class="ml-2 px-4 py-2 bg-blue-500 text-white rounded">🖨️ Print / Export PDF</button>
         </div>
+
         <div class="mb-8 border-b-2 border-gray-800 pb-6">
           <div class="flex items-center gap-6">
             ${getLogoHTML(getCurrentSettings().logo_url)}
@@ -465,25 +547,38 @@
           </div>
           <div class="digital-signature">
             <p class="text-green-700 font-semibold mb-1">✓ DIGITALLY SIGNED</p>
-            <p class="text-gray-800"><strong>Signed by:</strong> ${escapeHtml(req.requesterName)}</p>
-            <p class="text-gray-700"><strong>NIP:</strong> ${escapeHtml(req.requesterNIP)}</p>
-            <p class="text-gray-600 text-sm"><strong>Date:</strong> ${formatDate(req.submissionDate)}</p>
-            <p class="text-gray-600 text-sm"><strong>Timestamp:</strong> ${formatTimestamp(req.createdAt)}</p>
+            <div id="requesterSigDisplay">${sigHtml('requester', req.signatureRequester || '')}</div>
+            <p class="text-gray-600 text-sm mt-2"><strong>Timestamp:</strong> ${formatTimestamp(req.createdAt)}</p>
           </div>
         </div>
 
         ${req.status === 'Pending Verification' ? `
           <div class="border-t-2 border-gray-200 pt-6 no-print">
             <h2 class="text-xl font-bold mb-4">Verifikator Section (Step 1 of 2)</h2>
+
             <div class="grid grid-cols-2 gap-4 mb-4">
               <div><label class="block text-sm font-semibold mb-2">Verifikator Name *</label><input type="text" id="verifierName" class="w-full px-4 py-2 border rounded"></div>
               <div><label class="block text-sm font-semibold mb-2">Verifikator NIP *</label><input type="text" id="verifierNIP" class="w-full px-4 py-2 border rounded"></div>
             </div>
+
             <div class="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
               <p class="text-sm text-blue-800"><strong>ℹ️ Digital Signature:</strong> Your verification will be digitally signed with your name, NIP, and timestamp.</p>
             </div>
+
+            <!-- Verifier signature pad -->
+            <div class="mb-4">
+              <label class="block text-sm font-semibold mb-2">Tanda Tangan Verifikator (mouse / touch)</label>
+              <canvas id="verifierSignatureCanvas" class="signature-canvas w-full" style="height:140px;"></canvas>
+              <div class="flex gap-2 mt-2">
+                <button id="verifierClearBtn" class="px-3 py-2 bg-gray-500 text-white rounded">Clear</button>
+                <button id="verifierSaveBtn" class="px-3 py-2 bg-green-600 text-white rounded">Save Signature</button>
+                <div id="verifierSigPreview" class="ml-4"></div>
+              </div>
+              <input type="hidden" id="verifierSignatureInput" />
+            </div>
+
             <div class="flex gap-4">
-              <button onclick="verifyRequest()" class="flex-1 px-6 py-3 bg-green-600 text-white rounded-lg font-bold">✓ Verify & Send to Penanggung Jawab</button>
+              <button id="verifyNowBtn" class="flex-1 px-6 py-3 bg-green-600 text-white rounded-lg font-bold">✓ Verify & Send to Penanggung Jawab</button>
               <button onclick="showRejectModal('verifier')" class="flex-1 px-6 py-3 bg-red-600 text-white rounded-lg font-bold">✗ Reject Request</button>
             </div>
           </div>
@@ -498,15 +593,30 @@
 
             <div class="no-print">
               <h2 class="text-xl font-bold mb-4">Penanggung Jawab Final Approval (Step 2 of 2)</h2>
+
               <div class="grid grid-cols-2 gap-4 mb-4">
                 <div><label class="block text-sm font-semibold mb-2">Penanggung Jawab Name *</label><input type="text" id="supervisorName" class="w-full px-4 py-2 border rounded"></div>
                 <div><label class="block text-sm font-semibold mb-2">Penanggung Jawab NIP *</label><input type="text" id="supervisorNIP" class="w-full px-4 py-2 border rounded"></div>
               </div>
+
               <div class="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
                 <p class="text-sm text-blue-800"><strong>ℹ️ Digital Signature:</strong> Your final approval will be digitally signed with your name, NIP, and timestamp.</p>
               </div>
+
+              <!-- Supervisor signature pad -->
+              <div class="mb-4">
+                <label class="block text-sm font-semibold mb-2">Tanda Tangan Penanggung Jawab (mouse / touch)</label>
+                <canvas id="supervisorSignatureCanvas" class="signature-canvas w-full" style="height:140px;"></canvas>
+                <div class="flex gap-2 mt-2">
+                  <button id="supervisorClearBtn" class="px-3 py-2 bg-gray-500 text-white rounded">Clear</button>
+                  <button id="supervisorSaveBtn" class="px-3 py-2 bg-green-600 text-white rounded">Save Signature</button>
+                  <div id="supervisorSigPreview" class="ml-4"></div>
+                </div>
+                <input type="hidden" id="supervisorSignatureInput" />
+              </div>
+
               <div class="flex gap-4">
-                <button onclick="approveRequestFinal()" class="flex-1 px-6 py-3 bg-green-600 text-white rounded-lg font-bold">✓ Give Final Approval</button>
+                <button id="approveNowBtn" class="flex-1 px-6 py-3 bg-green-600 text-white rounded-lg font-bold">✓ Give Final Approval</button>
                 <button onclick="showRejectModal('supervisor')" class="flex-1 px-6 py-3 bg-red-600 text-white rounded-lg font-bold">✗ Reject Request</button>
               </div>
             </div>
@@ -517,15 +627,15 @@
             <div class="grid grid-cols-3 gap-6 mb-6">
               <div class="text-center">
                 <p class="text-sm font-semibold text-gray-700 mb-4">Verifikator</p>
-                ${req.verifierName ? `<div class="digital-signature mx-auto" style="max-width:300px;"><p class="text-green-700 font-semibold mb-1">✓ DIGITALLY SIGNED</p><p class="text-gray-800 text-sm"><strong>Signed by:</strong> ${escapeHtml(req.verifierName)}</p><p class="text-gray-700 text-sm"><strong>NIP:</strong> ${escapeHtml(req.verifierNIP)}</p><p class="text-gray-600 text-xs"><strong>Date:</strong> ${formatDate(req.verificationDate)}</p></div>` : '<p class="text-gray-500 text-sm">Not verified</p>'}
+                ${req.signatureVerifier ? `<div class="digital-signature mx-auto" style="max-width:300px;">${sigHtml('verifier', req.signatureVerifier)}</div>` : '<p class="text-gray-500 text-sm">Not verified</p>'}
               </div>
               <div class="text-center">
                 <p class="text-sm font-semibold text-gray-700 mb-4">Penanggung Jawab</p>
-                ${req.supervisorName ? `<div class="digital-signature mx-auto" style="max-width:300px;"><p class="text-green-700 font-semibold mb-1">✓ DIGITALLY SIGNED</p><p class="text-gray-800 text-sm"><strong>Signed by:</strong> ${escapeHtml(req.supervisorName)}</p><p class="text-gray-700 text-sm"><strong>NIP:</strong> ${escapeHtml(req.supervisorNIP)}</p><p class="text-gray-600 text-xs"><strong>Date:</strong> ${formatDate(req.supervisorApprovalDate)}</p></div>` : '<p class="text-gray-500 text-sm">Not approved</p>'}
+                ${req.signatureSupervisor ? `<div class="digital-signature mx-auto" style="max-width:300px;">${sigHtml('supervisor', req.signatureSupervisor)}</div>` : '<p class="text-gray-500 text-sm">Not approved</p>'}
               </div>
               <div class="text-center">
                 <p class="text-sm font-semibold text-gray-700 mb-4">Requester</p>
-                <div class="digital-signature mx-auto" style="max-width:300px;"><p class="text-green-700 font-semibold mb-1">✓ DIGITALLY SIGNED</p><p class="text-gray-800 text-sm"><strong>Signed by:</strong> ${escapeHtml(req.requesterName)}</p><p class="text-gray-700 text-sm"><strong>NIP:</strong> ${escapeHtml(req.requesterNIP)}</p><p class="text-gray-600 text-xs"><strong>Date:</strong> ${formatDate(req.submissionDate)}</p></div>
+                <div class="digital-signature mx-auto" style="max-width:300px;">${sigHtml('requester', req.signatureRequester || '')}</div>
               </div>
             </div>
 
@@ -533,8 +643,86 @@
           </div>
         `}
       `;
+
+      // After rendering detail view, init signature pads (if present)
+      // init verifier pad if pending verification
+      if(req.status === 'Pending Verification'){
+        initVerifierSignaturePad(req);
+        document.getElementById('verifyNowBtn').addEventListener('click', async ()=> {
+          // auto-save signature if drawn but not saved
+          if(verifierSigPad && !verifierSignatureDataUrl && !verifierSigPad.isEmpty()){
+            verifierSignatureDataUrl = verifierSigPad.toDataURL('image/png');
+            document.getElementById('verifierSignatureInput').value = verifierSignatureDataUrl;
+            renderVerifierSigPreview(verifierSignatureDataUrl);
+          }
+          // apply verification
+          await verifyRequest();
+        });
+      }
+
+      if(req.status === 'Verified - Pending Approval'){
+        initSupervisorSignaturePad(req);
+        document.getElementById('approveNowBtn').addEventListener('click', async ()=> {
+          if(supervisorSigPad && !supervisorSignatureDataUrl && !supervisorSigPad.isEmpty()){
+            supervisorSignatureDataUrl = supervisorSigPad.toDataURL('image/png');
+            document.getElementById('supervisorSignatureInput').value = supervisorSignatureDataUrl;
+            renderSupervisorSigPreview(supervisorSignatureDataUrl);
+          }
+          await approveRequestFinal();
+        });
+      }
+
       switchView('detail');
     };
+
+    // Verifier signature pad init & helpers
+    function initVerifierSignaturePad(req){
+      const canvas = document.getElementById('verifierSignatureCanvas');
+      if(!canvas) return;
+      fitToContainer(canvas);
+      verifierSigPad = new SignaturePad(canvas, { penColor: "rgb(22,78,99)" });
+      // if record already has signatureVerifier, show preview
+      if(req.signatureVerifier){
+        renderVerifierSigPreview(req.signatureVerifier);
+      }
+      document.getElementById('verifierClearBtn').addEventListener('click', ()=> { verifierSigPad.clear(); verifierSignatureDataUrl = null; document.getElementById('verifierSignatureInput').value = ''; document.getElementById('verifierSigPreview').innerHTML = ''; });
+      document.getElementById('verifierSaveBtn').addEventListener('click', ()=> {
+        if(verifierSigPad.isEmpty()){ showToast('Tandatangan kosong — silakan tanda tangan terlebih dahulu', true); return; }
+        const dataUrl = verifierSigPad.toDataURL('image/png');
+        verifierSignatureDataUrl = dataUrl;
+        document.getElementById('verifierSignatureInput').value = dataUrl;
+        renderVerifierSigPreview(dataUrl);
+        showToast('Signature verifier saved (preview shown)');
+      });
+    }
+    function renderVerifierSigPreview(dataUrl){
+      const c=document.getElementById('verifierSigPreview'); if(!c) return;
+      c.innerHTML = `<img src="${dataUrl}" alt="verifier sig" style="max-height:80px;border:1px solid #e5e7eb;padding:4px;border-radius:4px;background:white">`;
+    }
+
+    // Supervisor signature pad init & helpers
+    function initSupervisorSignaturePad(req){
+      const canvas = document.getElementById('supervisorSignatureCanvas');
+      if(!canvas) return;
+      fitToContainer(canvas);
+      supervisorSigPad = new SignaturePad(canvas, { penColor: "rgb(22,78,99)" });
+      if(req.signatureSupervisor){
+        renderSupervisorSigPreview(req.signatureSupervisor);
+      }
+      document.getElementById('supervisorClearBtn').addEventListener('click', ()=> { supervisorSigPad.clear(); supervisorSignatureDataUrl = null; document.getElementById('supervisorSignatureInput').value = ''; document.getElementById('supervisorSigPreview').innerHTML = ''; });
+      document.getElementById('supervisorSaveBtn').addEventListener('click', ()=> {
+        if(supervisorSigPad.isEmpty()){ showToast('Tandatangan kosong — silakan tanda tangan terlebih dahulu', true); return; }
+        const dataUrl = supervisorSigPad.toDataURL('image/png');
+        supervisorSignatureDataUrl = dataUrl;
+        document.getElementById('supervisorSignatureInput').value = dataUrl;
+        renderSupervisorSigPreview(dataUrl);
+        showToast('Signature supervisor saved (preview shown)');
+      });
+    }
+    function renderSupervisorSigPreview(dataUrl){
+      const c=document.getElementById('supervisorSigPreview'); if(!c) return;
+      c.innerHTML = `<img src="${dataUrl}" alt="supervisor sig" style="max-height:80px;border:1px solid #e5e7eb;padding:4px;border-radius:4px;background:white">`;
+    }
 
     // ---------- WhatsApp ----------
     function getWhatsAppUrl(requestId){
@@ -559,9 +747,6 @@
       return `https://wa.me/${phone}?text=${message}`;
     }
     function openWhatsApp(requestId){ const url=getWhatsAppUrl(requestId); if(!url){ showToast('Nomor WhatsApp belum diatur di Settings', true); return; } window.open(url,'_blank','noopener'); }
-
-    // ---------- Settings apply ----------
-    applySettingsToUI = function(){ const s=getCurrentSettings(); document.querySelectorAll('.logo-container').forEach(el => el.innerHTML = getLogoHTML(s.logo_url)); const submitBtn = document.getElementById('submitRequestBtn'); if(submitBtn) submitBtn.textContent = s.submit_button_text; }
 
     // ---------- Filters helpers ----------
     function populateFilters(){
@@ -651,59 +836,8 @@
       XLSX.writeFile(wb, filename);
     }
 
-    // ---------- Workflow: verify / approve / reject ----------
+    // ---------- Workflow: verify / approve / reject (with signature data) ----------
     function findRequestById(id){ return currentRequests.find(r => (r.__backendId && r.__backendId === id) || (r.documentNumber && r.documentNumber === id)); }
-
-    function renderVerifierDashboard(){
-      const container=document.getElementById('verifierRequestsList'); if(!container) return;
-      const pending=(currentRequests||[]).filter(r=>r.recordType==='request' && r.status==='Pending Verification');
-      if(pending.length===0){ container.innerHTML='<p class="text-gray-500 text-center py-8">Tidak ada permintaan yang menunggu verifikasi</p>'; return; }
-      container.innerHTML = pending.sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt)).map(r=>`
-        <div class="border border-yellow-200 bg-yellow-50 rounded-lg p-4 hover:shadow-md transition-shadow cursor-pointer" data-id="${r.__backendId||r.documentNumber}">
-          <div class="flex justify-between items-start mb-2">
-            <div>
-              <h3 class="font-bold text-lg text-gray-800">${r.documentNumber}</h3>
-              <p class="text-sm text-gray-600">${r.workUnit} - ${r.year}</p>
-            </div>
-            <span class="px-3 py-1 rounded-full text-sm font-semibold bg-yellow-200 text-yellow-800">Step 1: Pending Verification</span>
-          </div>
-          <p class="text-sm text-gray-700 mb-2"><strong>Requester:</strong> ${r.requesterName} (${r.requesterNIP})</p>
-          <p class="text-sm text-gray-600 mb-3"><strong>Date:</strong> ${formatDate(r.submissionDate)}</p>
-          <div class="flex gap-2">
-            <button class="verify-now px-4 py-2 bg-green-600 text-white rounded" data-id="${r.__backendId||r.documentNumber}">✓ Verify (Open)</button>
-            <button class="reject-now px-4 py-2 bg-red-600 text-white rounded" data-id="${r.__backendId||r.documentNumber}">✗ Reject</button>
-          </div>
-        </div>
-      `).join('');
-      container.querySelectorAll('.verify-now').forEach(btn=>btn.addEventListener('click',e=>{ const id=e.currentTarget.getAttribute('data-id'); viewRequestDetail(id); }));
-      container.querySelectorAll('.reject-now').forEach(btn=>btn.addEventListener('click',e=>{ const id=e.currentTarget.getAttribute('data-id'); viewRequestDetail(id); setTimeout(()=> showRejectModal('verifier'),200); }));
-    }
-
-    function renderSupervisorDashboard(){
-      const container=document.getElementById('supervisorRequestsList'); if(!container) return;
-      const pending=(currentRequests||[]).filter(r=>r.recordType==='request' && r.status==='Verified - Pending Approval');
-      if(pending.length===0){ container.innerHTML='<p class="text-gray-500 text-center py-8">Tidak ada permintaan yang menunggu persetujuan akhir</p>'; return; }
-      container.innerHTML = pending.sort((a,b)=>new Date(b.verificationDate||b.updatedAt)-new Date(a.verificationDate||a.updatedAt)).map(r=>`
-        <div class="border border-blue-200 bg-blue-50 rounded-lg p-4 hover:shadow-md transition-shadow cursor-pointer" data-id="${r.__backendId||r.documentNumber}">
-          <div class="flex justify-between items-start mb-2">
-            <div>
-              <h3 class="font-bold text-lg text-gray-800">${r.documentNumber}</h3>
-              <p class="text-sm text-gray-600">${r.workUnit} - ${r.year}</p>
-            </div>
-            <span class="px-3 py-1 rounded-full text-sm font-semibold bg-blue-200 text-blue-800">Step 2: Pending Final Approval</span>
-          </div>
-          <p class="text-sm text-gray-700 mb-2"><strong>Requester:</strong> ${r.requesterName} (${r.requesterNIP})</p>
-          <p class="text-sm text-gray-700 mb-2"><strong>Verified by:</strong> ${r.verifierName} (${r.verifierNIP})</p>
-          <p class="text-sm text-gray-600 mb-3"><strong>Verification Date:</strong> ${formatDate(r.verificationDate)}</p>
-          <div class="flex gap-2">
-            <button class="approve-now px-4 py-2 bg-green-600 text-white rounded" data-id="${r.__backendId||r.documentNumber}">✓ Approve (Open)</button>
-            <button class="reject-now px-4 py-2 bg-red-600 text-white rounded" data-id="${r.__backendId||r.documentNumber}">✗ Reject</button>
-          </div>
-        </div>
-      `).join('');
-      container.querySelectorAll('.approve-now').forEach(btn=>btn.addEventListener('click',e=>{ const id=e.currentTarget.getAttribute('data-id'); viewRequestDetail(id); }));
-      container.querySelectorAll('.reject-now').forEach(btn=>btn.addEventListener('click',e=>{ const id=e.currentTarget.getAttribute('data-id'); viewRequestDetail(id); setTimeout(()=> showRejectModal('supervisor'),200); }));
-    }
 
     async function verifyRequest(){
       const verifierNameEl=document.getElementById('verifierName'); const verifierNIPEl=document.getElementById('verifierNIP');
@@ -712,7 +846,16 @@
       if(!verifierName){ showToast('Please enter verifikator name', true); return; } if(!verifierNIP){ showToast('Please enter verifikator NIP', true); return; }
       const req = findRequestById(editingRequestId); if(!req){ showToast('Request not found', true); return; }
 
-      req.status='Verified - Pending Approval'; req.verifierName=verifierName; req.verifierNIP=verifierNIP; req.verificationDate=new Date().toISOString().split('T')[0]; req.rejectionReason=''; req.rejectedBy=''; req.updatedAt=new Date().toISOString();
+      // use saved verifierSignatureDataUrl if present (set during Save or auto-save)
+      const sig = document.getElementById('verifierSignatureInput') ? document.getElementById('verifierSignatureInput').value : (verifierSignatureDataUrl || '');
+      req.status='Verified - Pending Approval';
+      req.verifierName=verifierName;
+      req.verifierNIP=verifierNIP;
+      req.verificationDate=new Date().toISOString().split('T')[0];
+      req.rejectionReason='';
+      req.rejectedBy='';
+      req.signatureVerifier = sig || '';
+      req.updatedAt=new Date().toISOString();
 
       const sdk = ensureDataSdk();
       if(sdk && sdk.update){ const res = await sdk.update(req); if(!(res && res.isOk)) showToast('Verified locally (SDK update failed)', true); else showToast('Request verified! Sent to Penanggung Jawab'); } else showToast('Request verified (local)');
@@ -727,13 +870,22 @@
       if(!supervisorName){ showToast('Please enter penanggung jawab name', true); return; } if(!supervisorNIP){ showToast('Please enter penanggung jawab NIP', true); return; }
       const req = findRequestById(editingRequestId); if(!req){ showToast('Request not found', true); return; }
 
-      req.status='Fully Approved'; req.supervisorName=supervisorName; req.supervisorNIP=supervisorNIP; req.supervisorApprovalDate=new Date().toISOString().split('T')[0]; req.rejectionReason=''; req.rejectedBy=''; req.updatedAt=new Date().toISOString();
+      const sig = document.getElementById('supervisorSignatureInput') ? document.getElementById('supervisorSignatureInput').value : (supervisorSignatureDataUrl || '');
+      req.status='Fully Approved';
+      req.supervisorName=supervisorName;
+      req.supervisorNIP=supervisorNIP;
+      req.supervisorApprovalDate=new Date().toISOString().split('T')[0];
+      req.rejectionReason='';
+      req.rejectedBy='';
+      req.signatureSupervisor = sig || '';
+      req.updatedAt=new Date().toISOString();
 
       const sdk = ensureDataSdk();
       if(sdk && sdk.update){ const res = await sdk.update(req); if(!(res && res.isOk)) showToast('Approved locally (SDK update failed)', true); else showToast('Request fully approved! Ready for goods release'); } else showToast('Request approved (local)');
       saveLocalRequests(); renderVerifierDashboard(); renderSupervisorDashboard(); switchView('supervisor');
     }
 
+    // ---------- Reject modal (unchanged) ----------
     function showRejectModal(role){
       const modal=document.createElement('div'); modal.className='modal-backdrop';
       modal.innerHTML = `<div class="modal-content"><h3 class="text-xl font-bold mb-3">Reject Request</h3><p class="text-gray-700 mb-3">Please provide reason for rejection:</p><textarea id="rejectionReasonInput" class="w-full p-2 border rounded mb-3" rows="4" placeholder="Enter reason..."></textarea><div class="flex gap-3 justify-end"><button id="cancelRejectBtn" class="px-4 py-2 bg-gray-500 text-white rounded">Cancel</button><button id="confirmRejectBtn" class="px-4 py-2 bg-red-600 text-white rounded">Confirm Reject</button></div></div>`;
@@ -748,16 +900,12 @@
         saveLocalRequests(); showToast('Request rejected'); modal.remove(); renderVerifierDashboard(); renderSupervisorDashboard(); switchView(role==='verifier'?'verifier':'supervisor');
       });
     }
-
-    // expose for detail view buttons
-    window.verifyRequest = verifyRequest;
-    window.approveRequestFinal = approveRequestFinal;
     window.showRejectModal = showRejectModal;
 
     // ---------- Print ----------
     window.printDocument = function(){ if(currentView !== 'detail'){ showToast('Mohon buka detail permintaan terlebih dahulu', true); return; } setTimeout(()=> window.print(), 150); };
 
-    // ---------- Init ----------
+    // ---------- Init & wiring ----------
     document.getElementById('newRequestBtn').addEventListener('click', ()=>{ resetForm(); switchView('form'); });
     document.getElementById('viewRequestsBtn').addEventListener('click', ()=> switchView('requests'));
     document.getElementById('verifierViewBtn').addEventListener('click', ()=> switchView('verifier'));
@@ -785,14 +933,11 @@
 
     // load local data first, then try adapter init
     loadLocalRequests();
-    // If adapter exists, init it so it can override local data (if any)
     const sdk = ensureDataSdk();
     if(sdk && sdk.init){
       sdk.init({
         onDataChanged(data){
-          // adapter returns array of records including settings; merge
           if(Array.isArray(data)){
-            // adapter sends entire dataset; replace currentRequests & settings
             const settingsRecords = data.filter(r=>r.recordType==='settings');
             appSettings = settingsRecords.length>0 ? settingsRecords[0] : appSettings;
             currentRequests = data;
@@ -804,9 +949,7 @@
             if(currentView==='form') updateDocumentNumber();
           }
         }
-      }).then(res=>{
-        if(res && res.isOk) console.log('dataSdk initialized (adapter)');
-      }).catch(e=>console.warn('adapter init error', e));
+      }).then(res=>{ if(res && res.isOk) console.log('dataSdk initialized (adapter)'); }).catch(e=>console.warn('adapter init error', e));
     }
 
     // final render
