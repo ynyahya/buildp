@@ -5,34 +5,35 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>ATK Request Form - BPS South Jakarta</title>
 
-  <!-- GHPAGES base: sesuaikan jika repo-nya di subpath -->
+  <!-- base for GH Pages subpath -->
   <base href="/buildp/">
 
-  <!-- Tailwind CDN -->
+  <!-- Tailwind -->
   <script src="https://cdn.tailwindcss.com"></script>
 
   <!-- SheetJS for .xlsx export -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
-
+  <!-- Safe local data adapter (load BEFORE main script) -->
+  <script src="dataAdapter-google-sheets.js"></script>
 
   <style>
     body { box-sizing: border-box; }
-    @media print { .no-print { display:none!important } }
     .toast{position:fixed;top:20px;right:20px;background:#10b981;color:#fff;padding:12px 18px;border-radius:8px;z-index:1000}
     .toast.error{background:#ef4444}
     .modal-backdrop{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:999}
     .modal-content{background:#fff;border-radius:12px;padding:24px;max-width:600px;width:92%}
     .digital-signature{border:2px solid #10b981;background:#f0fdf4;padding:16px;border-radius:8px;font-family:'Courier New',monospace}
+    @media print { .no-print{display:none!important} }
   </style>
 </head>
 <body class="bg-gray-50 min-h-full">
   <div id="app" class="max-w-6xl mx-auto p-4 md:p-8"></div>
 
   <script>
-  // ---------- MAIN APP (UI + logic) ----------
+  // ---------- App (full) ----------
   document.addEventListener('DOMContentLoaded', () => {
-    // Default config (fallback)
+    // Default config
     const defaultConfig = {
       form_title: "Form Permintaan ATK",
       budget_year: (new Date()).getFullYear().toString(),
@@ -43,30 +44,25 @@
       submit_button_text: "Kirim Permintaan"
     };
 
-    // App state
-    let appSettings = null;         // loaded from sheet (settings record) or localStorage fallback
-    let currentRequests = [];       // loaded from sheet or local demo
+    // State
+    let appSettings = null;
+    let currentRequests = [];
     let currentView = 'form';
     let editingRequestId = null;
 
-    // Utility: toast
+    // Helpers
     function showToast(msg, isError=false){
-      const t=document.createElement('div'); t.className='toast' + (isError? ' error':'' ); t.textContent=msg; document.body.appendChild(t);
+      const t=document.createElement('div'); t.className='toast' + (isError? ' error':''); t.textContent=msg; document.body.appendChild(t);
       setTimeout(()=>t.remove(),3500);
     }
-
-    function formatDate(dateString){
-      if(!dateString) return '-';
-      const d=new Date(dateString);
-      const months=['January','February','March','April','May','June','July','August','September','October','November','December'];
-      return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
-    }
+    function escapeHtml(s){ if(!s) return ''; return String(s).replace(/[&<>"']/g, (m)=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[m]); }
+    function formatDate(dateString){ if(!dateString) return '-'; const d=new Date(dateString); const months=['January','February','March','April','May','June','July','August','September','October','November','December']; return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`; }
     function formatTimestamp(iso){ if(!iso) return '-'; const d=new Date(iso); return d.toLocaleString('en-US',{year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}); }
 
-    // Data SDK (if adapter available)
+    // Data SDK presence helper
     function ensureDataSdk(){ return window.dataSdk || null; }
 
-    // ------------------ BUILD UI ------------------
+    // Render base UI skeleton
     const app = document.getElementById('app');
     app.innerHTML = `
       <div class="no-print mb-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
@@ -104,18 +100,18 @@
       <div id="settingsView" class="hidden bg-white rounded-lg shadow-lg p-6 md:p-8"></div>
     `;
 
-    // ------------------ Form renderer ------------------
+    // ---------- Form view ----------
     function renderFormView(){
-      const settings = getCurrentSettings();
+      const s = getCurrentSettings();
       const v = document.getElementById('requestFormView');
       v.innerHTML = `
         <div class="mb-8 border-b-2 border-gray-800 pb-6">
           <div class="flex items-center justify-center gap-6">
-            <div class="flex-shrink-0 logo-container">${getLogoHTML(settings.logo_url)}</div>
+            <div class="flex-shrink-0 logo-container">${getLogoHTML(s.logo_url)}</div>
             <div class="text-center flex-grow">
-              <h1 id="formTitle" class="text-3xl font-bold text-gray-800 mb-2">${escapeHtml(settings.form_title)}</h1>
-              <p id="budgetYear" class="text-gray-700 text-lg mb-1">Tahun Anggaran ${escapeHtml(settings.budget_year)}</p>
-              <p id="organizationName" class="text-gray-600">${escapeHtml(settings.organization_name)}</p>
+              <h1 id="formTitle" class="text-3xl font-bold text-gray-800 mb-2">${escapeHtml(s.form_title)}</h1>
+              <p id="budgetYear" class="text-gray-700 text-lg mb-1">Tahun Anggaran ${escapeHtml(s.budget_year)}</p>
+              <p id="organizationName" class="text-gray-600">${escapeHtml(s.organization_name)}</p>
             </div>
             <div class="flex-shrink-0 w-20"></div>
           </div>
@@ -155,86 +151,55 @@
           <button id="submitRequestBtn" class="no-print w-full px-6 py-3 bg-blue-600 text-white rounded-lg font-bold text-lg">${escapeHtml(defaultConfig.submit_button_text)}</button>
         </div>
       `;
-
       initYearDropdown();
       initSubmissionDate();
       updateDocumentNumber();
       addItemRow();
-
       document.getElementById('addRowBtn').addEventListener('click', addItemRow);
       document.getElementById('submitRequestBtn').addEventListener('click', submitRequest);
     }
 
-    // ------------------ helper & form functions ------------------
-    function escapeHtml(s){ if(!s) return ''; return String(s).replace(/[&<>"']/g, (m)=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'})[m]);}
-
+    // Form helpers
     function initYearDropdown(){
-      const sel=document.getElementById('yearSelect');
-      sel.innerHTML='';
-      const currentYear=(new Date()).getFullYear();
-      for(let i=currentYear-5;i<=currentYear+5;i++){
-        const o=document.createElement('option'); o.value=i; o.textContent=i; if(i===currentYear) o.selected=true; sel.appendChild(o);
-      }
+      const sel=document.getElementById('yearSelect'); if(!sel) return;
+      sel.innerHTML=''; const currentYear=(new Date()).getFullYear();
+      for(let i=currentYear-5;i<=currentYear+5;i++){ const o=document.createElement('option'); o.value=i; o.textContent=i; if(i===currentYear) o.selected=true; sel.appendChild(o); }
     }
-    function initSubmissionDate(){ const d=document.getElementById('submissionDate'); d.value=(new Date()).toISOString().split('T')[0]; }
-
-    function addItemRow(){
-      const tbody=document.getElementById('itemsTableBody');
-      const row=document.createElement('tr');
-      const idx=tbody.children.length+1;
-      row.innerHTML=`
-        <td class="border px-4 py-2 text-center">${idx}</td>
-        <td class="border px-4 py-2"><input type="text" class="item-name w-full px-2 py-1 border rounded" placeholder="Masukkan nama item"></td>
-        <td class="border px-4 py-2"><input type="number" class="item-quantity w-full px-2 py-1 border rounded" min="1" value="1"></td>
-        <td class="border px-4 py-2"><input type="text" class="item-notes w-full px-2 py-1 border rounded" placeholder="Satuan (contoh: pcs)"></td>
-        <td class="border px-4 py-2 text-center no-print"><button class="delete-row-btn px-3 py-1 bg-red-500 text-white rounded">Hapus</button></td>
-      `;
-      tbody.appendChild(row);
-      row.querySelector('.delete-row-btn').addEventListener('click', ()=>{
-        row.remove();
-        updateRowNumbers();
-      });
-    }
+    function initSubmissionDate(){ const d=document.getElementById('submissionDate'); if(d) d.value=(new Date()).toISOString().split('T')[0]; }
+    function addItemRow(){ const tbody=document.getElementById('itemsTableBody'); if(!tbody) return; const row=document.createElement('tr'); const idx=tbody.children.length+1; row.innerHTML=`
+      <td class="border px-4 py-2 text-center">${idx}</td>
+      <td class="border px-4 py-2"><input type="text" class="item-name w-full px-2 py-1 border rounded" placeholder="Masukkan nama item"></td>
+      <td class="border px-4 py-2"><input type="number" class="item-quantity w-full px-2 py-1 border rounded" min="1" value="1"></td>
+      <td class="border px-4 py-2"><input type="text" class="item-notes w-full px-2 py-1 border rounded" placeholder="Satuan (contoh: pcs)"></td>
+      <td class="border px-4 py-2 text-center no-print"><button class="delete-row-btn px-3 py-1 bg-red-500 text-white rounded">Hapus</button></td>
+    `; tbody.appendChild(row); row.querySelector('.delete-row-btn').addEventListener('click', ()=>{ row.remove(); updateRowNumbers(); }); }
     function updateRowNumbers(){ const tbody=document.getElementById('itemsTableBody'); Array.from(tbody.children).forEach((r,i)=> r.children[0].textContent=i+1); }
-    function getItemsFromTable(){ const tbody=document.getElementById('itemsTableBody'); const items=[]; Array.from(tbody.children).forEach(row=>{ const name=row.querySelector('.item-name').value.trim(); const qty=parseInt(row.querySelector('.item-quantity').value) || 0; const notes=row.querySelector('.item-notes').value.trim(); if(name && qty>0) items.push({name,quantity:qty,notes}); }); return items; }
+    function getItemsFromTable(){ const tbody=document.getElementById('itemsTableBody'); const items=[]; Array.from(tbody.children).forEach(row=>{ const name=row.querySelector('.item-name').value.trim(); const qty=parseInt(row.querySelector('.item-quantity').value)||0; const notes=row.querySelector('.item-notes').value.trim(); if(name && qty>0) items.push({name,quantity:qty,notes}); }); return items; }
 
-    // Document number generator
-    function updateDocumentNumber(){ const el=document.getElementById('documentNumber'); if(el) el.value = generateDocumentNumber(); }
+    // Document number
+    function updateDocumentNumber(){ const el=document.getElementById('documentNumber'); if(el) el.value=generateDocumentNumber(); }
     function generateDocumentNumber(){
-      const year=document.getElementById('yearSelect').value;
-      const submissionDate=document.getElementById('submissionDate').value;
+      const year=document.getElementById('yearSelect')?document.getElementById('yearSelect').value: (new Date()).getFullYear();
+      const submissionDate=document.getElementById('submissionDate')?document.getElementById('submissionDate').value:'';
       const settings = getCurrentSettings();
       const prefix = settings.doc_number_format || defaultConfig.doc_number_format;
-      let month = '01';
+      let month='01';
       if(submissionDate){ const d=new Date(submissionDate); month=(d.getMonth()+1).toString().padStart(2,'0'); }
-      const existingNumbers = (currentRequests||[]).filter(r=>r.recordType==='request').filter(r=>{
-        const parts=(r.documentNumber||'').split('/');
-        return parts.length===4 && parts[2]===month && parts[3]===year;
-      }).map(r=>{ const parts=(r.documentNumber||'').split('/'); return parseInt(parts[0])||0; });
-      const nextNumber = existingNumbers.length>0? Math.max(...existingNumbers)+1 : parseInt(prefix) || 1;
+      const existingNumbers = (currentRequests||[]).filter(r=>r.recordType==='request').filter(r=>{ const parts=(r.documentNumber||'').split('/'); return parts.length===4 && parts[2]===month && parts[3]===year; }).map(r=>{ const parts=(r.documentNumber||'').split('/'); return parseInt(parts[0])||0; });
+      const nextNumber = existingNumbers.length>0? Math.max(...existingNumbers)+1 : parseInt(prefix)||1;
       const padded = nextNumber.toString().padStart(4,'0');
       return `${padded}/ATK/${month}/${year}`;
     }
 
-    // Validate & submit
+    // Validate + submit
     function validateForm(){
-      const year=document.getElementById('yearSelect').value;
-      const workUnit=document.getElementById('workUnitSelect').value;
-      const items=getItemsFromTable();
-      const requesterName=document.getElementById('requesterName').value.trim();
-      const requesterNIP=document.getElementById('requesterNIP').value.trim();
-      if(!year){ showToast('Mohon pilih tahun', true); return false; }
-      if(!workUnit){ showToast('Mohon pilih bagian/fungsi', true); return false; }
-      if(items.length===0){ showToast('Mohon tambahkan minimal satu item', true); return false; }
-      if(!requesterName){ showToast('Mohon isi nama pemohon', true); return false; }
-      if(!requesterNIP){ showToast('Mohon isi NIP pemohon', true); return false; }
-      return true;
+      const year=document.getElementById('yearSelect')?document.getElementById('yearSelect').value:''; const workUnit=document.getElementById('workUnitSelect')?document.getElementById('workUnitSelect').value:''; const items=getItemsFromTable(); const requesterName=document.getElementById('requesterName')?document.getElementById('requesterName').value.trim():''; const requesterNIP=document.getElementById('requesterNIP')?document.getElementById('requesterNIP').value.trim():'';
+      if(!year){ showToast('Mohon pilih tahun', true); return false; } if(!workUnit){ showToast('Mohon pilih bagian/fungsi', true); return false; } if(items.length===0){ showToast('Mohon tambahkan minimal satu item', true); return false; } if(!requesterName){ showToast('Mohon isi nama pemohon', true); return false; } if(!requesterNIP){ showToast('Mohon isi NIP pemohon', true); return false; } return true;
     }
 
     async function submitRequest(){
       if(!validateForm()) return;
-      const btn=document.getElementById('submitRequestBtn');
-      btn.disabled=true; btn.textContent='Mengirim...';
+      const btn=document.getElementById('submitRequestBtn'); if(btn){ btn.disabled=true; btn.textContent='Mengirim...'; }
       try{
         const documentNumber = generateDocumentNumber();
         const year=document.getElementById('yearSelect').value;
@@ -271,41 +236,47 @@
         const sdk = ensureDataSdk();
         if(sdk && sdk.create){
           const res = await sdk.create(record);
-          if(res && res.isOk){ showToast('Permintaan berhasil dikirim dan tersimpan!'); resetForm(); }
-          else { console.error('create failed', res); showToast('Gagal menyimpan: ' + (res && res.error && res.error.message ? res.error.message : 'Unknown'), true); }
+          if(res && res.isOk){
+            showToast('Permintaan berhasil dikirim dan tersimpan!');
+            // dataHandler in adapter will call onDataChanged => app will sync currentRequests
+            resetForm();
+            // show in verifier dashboard
+            renderVerifierDashboard();
+          } else {
+            // fallback: adapter refused - push local
+            record.__backendId = 'local-'+Math.random().toString(36).slice(2,9);
+            currentRequests.push(record);
+            saveLocalRequests();
+            renderVerifierDashboard();
+            showToast('Disimpan lokal (adapter tidak terhubung)');
+            resetForm();
+          }
         } else {
           // fallback local
           record.__backendId = 'local-'+Math.random().toString(36).slice(2,9);
           currentRequests.push(record);
-          showToast('Disimpan lokal (SDK belum terhubung).');
+          saveLocalRequests();
+          renderVerifierDashboard();
+          showToast('Disimpan lokal (SDK tidak tersedia).');
           resetForm();
         }
       }catch(e){ console.error(e); showToast('Gagal mengirim: '+e.message,true); }
-      finally{ btn.disabled=false; btn.textContent=getCurrentSettings().submit_button_text; }
+      finally{ if(btn){ btn.disabled=false; btn.textContent=getCurrentSettings().submit_button_text; } }
     }
 
-    function resetForm(){
-      document.getElementById('workUnitSelect').value='';
-      document.getElementById('itemsTableBody').innerHTML='';
-      document.getElementById('requesterName').value='';
-      document.getElementById('requesterNIP').value='';
-      initSubmissionDate(); updateDocumentNumber(); addItemRow();
-    }
+    function resetForm(){ if(document.getElementById('workUnitSelect')) document.getElementById('workUnitSelect').value=''; if(document.getElementById('itemsTableBody')) document.getElementById('itemsTableBody').innerHTML=''; if(document.getElementById('requesterName')) document.getElementById('requesterName').value=''; if(document.getElementById('requesterNIP')) document.getElementById('requesterNIP').value=''; initSubmissionDate(); updateDocumentNumber(); addItemRow(); }
 
-    // ------------------ Settings UI (simplified, removed Google fields) ------------------
+    // ---------- Settings (no Google fields) ----------
     function getCurrentSettings(){
-      if(appSettings){
-        return {
-          form_title: appSettings.form_title || defaultConfig.form_title,
-          budget_year: appSettings.budget_year || defaultConfig.budget_year,
-          organization_name: appSettings.organization_name || defaultConfig.organization_name,
-          doc_number_format: appSettings.doc_number_format || defaultConfig.doc_number_format,
-          logo_url: appSettings.logo_url || defaultConfig.logo_url,
-          whatsapp_number: appSettings.whatsapp_number || defaultConfig.whatsapp_number,
-          submit_button_text: appSettings.submit_button_text || defaultConfig.submit_button_text
-        };
-      }
-      // fallback: read from localStorage
+      if(appSettings) return {
+        form_title: appSettings.form_title || defaultConfig.form_title,
+        budget_year: appSettings.budget_year || defaultConfig.budget_year,
+        organization_name: appSettings.organization_name || defaultConfig.organization_name,
+        doc_number_format: appSettings.doc_number_format || defaultConfig.doc_number_format,
+        logo_url: appSettings.logo_url || defaultConfig.logo_url,
+        whatsapp_number: appSettings.whatsapp_number || defaultConfig.whatsapp_number,
+        submit_button_text: appSettings.submit_button_text || defaultConfig.submit_button_text
+      };
       return {
         form_title: localStorage.getItem('atk_form_title') || defaultConfig.form_title,
         budget_year: localStorage.getItem('atk_budget_year') || defaultConfig.budget_year,
@@ -320,8 +291,7 @@
     function applySettingsToUI(){
       const s=getCurrentSettings();
       document.querySelectorAll('.logo-container').forEach(el => el.innerHTML = getLogoHTML(s.logo_url));
-      const submitBtn = document.getElementById('submitRequestBtn');
-      if(submitBtn) submitBtn.textContent = s.submit_button_text;
+      const submitBtn = document.getElementById('submitRequestBtn'); if(submitBtn) submitBtn.textContent = s.submit_button_text;
     }
 
     function getLogoHTML(logoUrl){
@@ -329,10 +299,60 @@
       return `<svg width="80" height="80" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><path d="M50 5 L85 20 L85 50 Q85 75 50 95 Q15 75 15 50 L15 20 Z" fill="#1e40af"/><path d="M50 15 L75 25 L75 50 Q75 70 50 85 Q25 70 25 50 L25 25 Z" fill="#3b82f6"/><text x="50" y="45" font-family="Arial" font-size="16" font-weight="bold" fill="white" text-anchor="middle">BPS</text></svg>`;
     }
 
-    // ------------------ Render lists & detail ------------------
+    function loadSettingsForm(){
+      const s=getCurrentSettings();
+      const v=document.getElementById('settingsView');
+      v.innerHTML = `
+        <h2 class="text-2xl font-bold mb-4">Settings / Pengaturan</h2>
+        <div class="mb-4"><label class="block text-sm font-semibold mb-1">Form Title</label><input id="settingFormTitle" class="w-full px-3 py-2 border rounded" value="${escapeHtml(s.form_title)}"></div>
+        <div class="mb-4"><label class="block text-sm font-semibold mb-1">Budget Year</label><input id="settingBudgetYear" class="w-full px-3 py-2 border rounded" value="${escapeHtml(s.budget_year)}"></div>
+        <div class="mb-4"><label class="block text-sm font-semibold mb-1">Organization Name</label><input id="settingOrganizationName" class="w-full px-3 py-2 border rounded" value="${escapeHtml(s.organization_name)}"></div>
+        <div class="mb-4"><label class="block text-sm font-semibold mb-1">Document Number Prefix</label><input id="settingDocNumberFormat" class="w-full px-3 py-2 border rounded" value="${escapeHtml(localStorage.getItem('atk_doc_prefix') || s.doc_number_format)}"><p class="text-xs text-gray-500 mt-1">Format: 0001 -> 0001/ATK/MM/YYYY</p></div>
+        <div class="mb-4"><label class="block text-sm font-semibold mb-1">Logo URL</label><input id="settingLogoUrl" class="w-full px-3 py-2 border rounded" value="${escapeHtml(s.logo_url)}"></div>
+        <div class="mb-4"><label class="block text-sm font-semibold mb-1">WhatsApp Number (contoh: 628123...)</label><input id="settingWhatsAppNumber" class="w-full px-3 py-2 border rounded" value="${escapeHtml(localStorage.getItem('atk_whatsapp_number') || s.whatsapp_number || '')}"></div>
+        <div class="flex gap-4 mt-4"><button id="saveSettingsBtn" class="px-4 py-2 bg-green-600 text-white rounded">💾 Save Settings</button><button id="cancelSettingsBtn" class="px-4 py-2 bg-gray-500 text-white rounded">Cancel</button></div>
+        <p class="text-xs text-gray-500 mt-3">Note: Google Client ID and Spreadsheet settings have been removed. App uses localStorage adapter for persistence.</p>
+      `;
+      document.getElementById('saveSettingsBtn').addEventListener('click', saveSettings);
+      document.getElementById('cancelSettingsBtn').addEventListener('click', ()=> switchView('form'));
+    }
+
+    function saveSettings(){
+      const s = {
+        form_title: document.getElementById('settingFormTitle').value.trim(),
+        budget_year: document.getElementById('settingBudgetYear').value.trim(),
+        organization_name: document.getElementById('settingOrganizationName').value.trim(),
+        doc_number_format: document.getElementById('settingDocNumberFormat').value.trim(),
+        logo_url: document.getElementById('settingLogoUrl').value.trim(),
+        whatsapp_number: document.getElementById('settingWhatsAppNumber').value.trim(),
+        submit_button_text: defaultConfig.submit_button_text,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      localStorage.setItem('atk_form_title', s.form_title);
+      localStorage.setItem('atk_budget_year', s.budget_year);
+      localStorage.setItem('atk_org', s.organization_name);
+      localStorage.setItem('atk_doc_prefix', s.doc_number_format);
+      localStorage.setItem('atk_logo', s.logo_url);
+      localStorage.setItem('atk_whatsapp_number', s.whatsapp_number);
+      appSettings = s;
+      applySettingsToUI();
+      showToast('Settings disimpan (lokal)');
+      switchView('form');
+    }
+
+    // ---------- Local persistence helpers (mirror adapter) ----------
+    function saveLocalRequests(){
+      try{ localStorage.setItem('atk_requests', JSON.stringify(currentRequests)); }catch(e){ console.warn('saveLocalRequests failed', e); }
+    }
+    function loadLocalRequests(){
+      try{ const raw = localStorage.getItem('atk_requests'); if(raw){ currentRequests = JSON.parse(raw); } else currentRequests = []; }catch(e){ console.warn('loadLocalRequests failed', e); currentRequests = []; }
+    }
+
+    // ---------- Render lists ----------
     function renderAllRequests(){
       const container=document.getElementById('allRequestsList');
-      const requests = (currentRequests||[]).filter(r=>r.recordType==='request');
+      const requests=(currentRequests||[]).filter(r=>r.recordType==='request');
       if(requests.length===0){ container.innerHTML='<p class="text-gray-500 text-center py-8">Belum ada permintaan</p>'; return; }
       const sorted = requests.slice().sort((a,b)=> new Date(b.createdAt) - new Date(a.createdAt));
       container.innerHTML = '';
@@ -356,8 +376,7 @@
             <p class="text-sm text-gray-600"><strong>Date:</strong> ${formatDate(r.submissionDate)}</p>
           </div>
         `;
-        // events
-        card.querySelector('.view-detail').addEventListener('click', ()=> window.viewRequestDetail(r.__backendId || r.documentNumber));
+        card.querySelector('.view-detail').addEventListener('click', ()=> viewRequestDetail(r.__backendId || r.documentNumber));
         card.querySelector('.open-wa').addEventListener('click', ()=> openWhatsApp(r.__backendId || r.documentNumber));
         card.querySelector('.delete-req').addEventListener('click', async (ev)=> {
           ev.stopPropagation();
@@ -368,8 +387,8 @@
             if(result && result.isOk){ showToast('Permintaan berhasil dihapus'); }
             else { showToast('Gagal menghapus', true); console.error('delete error', result); }
           } else {
-            // fallback remove local
             currentRequests = currentRequests.filter(x => (x.__backendId || x.documentNumber) !== (r.__backendId || r.documentNumber));
+            saveLocalRequests();
             renderAllRequests();
             showToast('Dihapus (local)');
           }
@@ -388,6 +407,7 @@
       }
     }
 
+    // ---------- Detail view ----------
     window.viewRequestDetail = function(id){
       const req = currentRequests.find(r=> (r.__backendId && r.__backendId===id) || (r.documentNumber && r.documentNumber===id));
       if(!req){ showToast('Request not found', true); return; }
@@ -395,8 +415,8 @@
       const dv = document.getElementById('requestDetailView');
       dv.innerHTML = `
         <div class="no-print mb-4">
-          <button onclick="window.switchView('requests')" class="px-4 py-2 bg-gray-500 text-white rounded">← Back</button>
-          <button onclick="window.printDocument && window.printDocument()" class="ml-2 px-4 py-2 bg-blue-500 text-white rounded">🖨️ Export PDF</button>
+          <button onclick="switchView('requests')" class="px-4 py-2 bg-gray-500 text-white rounded">← Back</button>
+          <button onclick="window.printDocument && window.printDocument()" class="ml-2 px-4 py-2 bg-blue-500 text-white rounded">🖨️ Print / Export PDF</button>
         </div>
         <div class="mb-8 border-b-2 border-gray-800 pb-6">
           <div class="flex items-center gap-6">
@@ -408,37 +428,119 @@
             </div>
           </div>
         </div>
+
         <div>
-          <p><strong>Document Number:</strong> ${escapeHtml(req.documentNumber)}</p>
-          <p><strong>Submission:</strong> ${escapeHtml(req.submissionLocation)}, ${formatDate(req.submissionDate)}</p>
-          <p><strong>Status:</strong> <span class="px-3 py-1 rounded-full ${getStatusColor(req.status)}">${escapeHtml(req.status)}</span></p>
-        </div>
-        <div class="mb-6 mt-4">
-          <h2 class="text-xl font-bold">ATK Items</h2>
-          <table class="w-full border-collapse border border-gray-300">
-            <thead class="bg-gray-100"><tr><th>No</th><th>Item</th><th>Qty</th><th>Notes</th></tr></thead>
+          <div class="grid grid-cols-3 gap-4 mb-4">
+            <div>
+              <p class="text-sm font-semibold text-gray-700">Document Number</p>
+              <p class="text-gray-900">${escapeHtml(req.documentNumber)}</p>
+            </div>
+            <div>
+              <p class="text-sm font-semibold text-gray-700">Year</p>
+              <p class="text-gray-900">${escapeHtml(req.year)}</p>
+            </div>
+            <div>
+              <p class="text-sm font-semibold text-gray-700">Work Unit</p>
+              <p class="text-gray-900">${escapeHtml(req.workUnit)}</p>
+            </div>
+          </div>
+
+          <h2 class="text-xl font-bold mb-2">ATK Items</h2>
+          <table class="w-full border-collapse border border-gray-300 mb-4">
+            <thead class="bg-gray-100"><tr><th class="px-3 py-2">No</th><th class="px-3 py-2">Item Name</th><th class="px-3 py-2">Quantity</th><th class="px-3 py-2">Notes / Remarks</th></tr></thead>
             <tbody>
               ${JSON.parse(req.items).map((it,i)=>`<tr><td class="border px-3">${i+1}</td><td class="border px-3">${escapeHtml(it.name)}</td><td class="border px-3">${escapeHtml(String(it.quantity))}</td><td class="border px-3">${escapeHtml(it.notes||'-')}</td></tr>`).join('')}
             </tbody>
           </table>
+
+          <p class="text-gray-700"><strong>Submission:</strong> ${escapeHtml(req.submissionLocation)}, ${formatDate(req.submissionDate)}</p>
+          <p class="text-gray-700 mt-2"><strong>Status:</strong> <span class="px-3 py-1 rounded-full ${getStatusColor(req.status)}">${escapeHtml(req.status)}</span></p>
         </div>
-        <div class="digital-signature">
-          <p class="text-green-700 font-semibold mb-1">✓ DIGITALLY SIGNED</p>
-          <p class="text-gray-800"><strong>Signed by:</strong> ${escapeHtml(req.requesterName)}</p>
-          <p class="text-gray-700"><strong>NIP:</strong> ${escapeHtml(req.requesterNIP)}</p>
-          <p class="text-gray-600 text-sm"><strong>Date:</strong> ${formatDate(req.submissionDate)}</p>
-          <p class="text-gray-600 text-sm"><strong>Timestamp:</strong> ${formatTimestamp(req.createdAt)}</p>
+
+        <div class="border-t-2 border-gray-200 pt-6 mb-6">
+          <h2 class="text-xl font-bold mb-4">Requester Information</h2>
+          <div class="grid grid-cols-2 gap-4 mb-4">
+            <div><p class="text-sm font-semibold text-gray-700">Name</p><p class="text-gray-900">${escapeHtml(req.requesterName)}</p></div>
+            <div><p class="text-sm font-semibold text-gray-700">NIP</p><p class="text-gray-900">${escapeHtml(req.requesterNIP)}</p></div>
+          </div>
+          <div class="digital-signature">
+            <p class="text-green-700 font-semibold mb-1">✓ DIGITALLY SIGNED</p>
+            <p class="text-gray-800"><strong>Signed by:</strong> ${escapeHtml(req.requesterName)}</p>
+            <p class="text-gray-700"><strong>NIP:</strong> ${escapeHtml(req.requesterNIP)}</p>
+            <p class="text-gray-600 text-sm"><strong>Date:</strong> ${formatDate(req.submissionDate)}</p>
+            <p class="text-gray-600 text-sm"><strong>Timestamp:</strong> ${formatTimestamp(req.createdAt)}</p>
+          </div>
         </div>
+
+        ${req.status === 'Pending Verification' ? `
+          <div class="border-t-2 border-gray-200 pt-6 no-print">
+            <h2 class="text-xl font-bold mb-4">Verifikator Section (Step 1 of 2)</h2>
+            <div class="grid grid-cols-2 gap-4 mb-4">
+              <div><label class="block text-sm font-semibold mb-2">Verifikator Name *</label><input type="text" id="verifierName" class="w-full px-4 py-2 border rounded"></div>
+              <div><label class="block text-sm font-semibold mb-2">Verifikator NIP *</label><input type="text" id="verifierNIP" class="w-full px-4 py-2 border rounded"></div>
+            </div>
+            <div class="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <p class="text-sm text-blue-800"><strong>ℹ️ Digital Signature:</strong> Your verification will be digitally signed with your name, NIP, and timestamp.</p>
+            </div>
+            <div class="flex gap-4">
+              <button onclick="verifyRequest()" class="flex-1 px-6 py-3 bg-green-600 text-white rounded-lg font-bold">✓ Verify & Send to Penanggung Jawab</button>
+              <button onclick="showRejectModal('verifier')" class="flex-1 px-6 py-3 bg-red-600 text-white rounded-lg font-bold">✗ Reject Request</button>
+            </div>
+          </div>
+        ` : req.status === 'Verified - Pending Approval' ? `
+          <div class="border-t-2 border-gray-200 pt-6">
+            <h2 class="text-xl font-bold mb-6 text-center">Verification Status</h2>
+            <div class="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg">
+              <p class="text-green-800 font-semibold mb-2">✓ Step 1: Verified by Verifikator</p>
+              <p class="text-sm text-gray-700"><strong>Verifikator:</strong> ${escapeHtml(req.verifierName)} (${escapeHtml(req.verifierNIP)})</p>
+              <p class="text-sm text-gray-600"><strong>Date:</strong> ${formatDate(req.verificationDate)}</p>
+            </div>
+
+            <div class="no-print">
+              <h2 class="text-xl font-bold mb-4">Penanggung Jawab Final Approval (Step 2 of 2)</h2>
+              <div class="grid grid-cols-2 gap-4 mb-4">
+                <div><label class="block text-sm font-semibold mb-2">Penanggung Jawab Name *</label><input type="text" id="supervisorName" class="w-full px-4 py-2 border rounded"></div>
+                <div><label class="block text-sm font-semibold mb-2">Penanggung Jawab NIP *</label><input type="text" id="supervisorNIP" class="w-full px-4 py-2 border rounded"></div>
+              </div>
+              <div class="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <p class="text-sm text-blue-800"><strong>ℹ️ Digital Signature:</strong> Your final approval will be digitally signed with your name, NIP, and timestamp.</p>
+              </div>
+              <div class="flex gap-4">
+                <button onclick="approveRequestFinal()" class="flex-1 px-6 py-3 bg-green-600 text-white rounded-lg font-bold">✓ Give Final Approval</button>
+                <button onclick="showRejectModal('supervisor')" class="flex-1 px-6 py-3 bg-red-600 text-white rounded-lg font-bold">✗ Reject Request</button>
+              </div>
+            </div>
+          </div>
+        ` : `
+          <div class="border-t-2 border-gray-200 pt-6">
+            <h2 class="text-xl font-bold mb-6 text-center">GOODS RELEASE SECTION</h2>
+            <div class="grid grid-cols-3 gap-6 mb-6">
+              <div class="text-center">
+                <p class="text-sm font-semibold text-gray-700 mb-4">Verifikator</p>
+                ${req.verifierName ? `<div class="digital-signature mx-auto" style="max-width:300px;"><p class="text-green-700 font-semibold mb-1">✓ DIGITALLY SIGNED</p><p class="text-gray-800 text-sm"><strong>Signed by:</strong> ${escapeHtml(req.verifierName)}</p><p class="text-gray-700 text-sm"><strong>NIP:</strong> ${escapeHtml(req.verifierNIP)}</p><p class="text-gray-600 text-xs"><strong>Date:</strong> ${formatDate(req.verificationDate)}</p></div>` : '<p class="text-gray-500 text-sm">Not verified</p>'}
+              </div>
+              <div class="text-center">
+                <p class="text-sm font-semibold text-gray-700 mb-4">Penanggung Jawab</p>
+                ${req.supervisorName ? `<div class="digital-signature mx-auto" style="max-width:300px;"><p class="text-green-700 font-semibold mb-1">✓ DIGITALLY SIGNED</p><p class="text-gray-800 text-sm"><strong>Signed by:</strong> ${escapeHtml(req.supervisorName)}</p><p class="text-gray-700 text-sm"><strong>NIP:</strong> ${escapeHtml(req.supervisorNIP)}</p><p class="text-gray-600 text-xs"><strong>Date:</strong> ${formatDate(req.supervisorApprovalDate)}</p></div>` : '<p class="text-gray-500 text-sm">Not approved</p>'}
+              </div>
+              <div class="text-center">
+                <p class="text-sm font-semibold text-gray-700 mb-4">Requester</p>
+                <div class="digital-signature mx-auto" style="max-width:300px;"><p class="text-green-700 font-semibold mb-1">✓ DIGITALLY SIGNED</p><p class="text-gray-800 text-sm"><strong>Signed by:</strong> ${escapeHtml(req.requesterName)}</p><p class="text-gray-700 text-sm"><strong>NIP:</strong> ${escapeHtml(req.requesterNIP)}</p><p class="text-gray-600 text-xs"><strong>Date:</strong> ${formatDate(req.submissionDate)}</p></div>
+              </div>
+            </div>
+
+            ${req.rejectionReason ? `<div class="mt-6 p-4 bg-red-50 border border-red-200 rounded-lg"><p class="text-sm font-semibold text-red-800 mb-2">Rejected by: ${escapeHtml(req.rejectedBy)}</p><p class="text-red-700">${escapeHtml(req.rejectionReason)}</p></div>` : ''}
+          </div>
+        `}
       `;
-      window.switchView('detail');
+      switchView('detail');
     };
 
-    // ------------------ WhatsApp helper ------------------
+    // ---------- WhatsApp ----------
     function getWhatsAppUrl(requestId){
       const req = currentRequests.find(r=> (r.__backendId && r.__backendId===requestId) || (r.documentNumber && r.documentNumber===requestId));
       if(!req) return null;
-      const settings = getCurrentSettings();
-      const phone = localStorage.getItem('atk_whatsapp_number') || settings.whatsapp_number || '';
+      const phone = localStorage.getItem('atk_whatsapp_number') || getCurrentSettings().whatsapp_number || '';
       if(!phone) return null;
       const items = JSON.parse(req.items);
       const itemsList = items.map((it,idx)=> `${idx+1}. ${it.name} (${it.quantity})`).join('%0A');
@@ -456,160 +558,31 @@
       else if(req.status==='Fully Approved') message += `✅ Permintaan ini telah disetujui.`;
       return `https://wa.me/${phone}?text=${message}`;
     }
-    function openWhatsApp(requestId){
-      const url = getWhatsAppUrl(requestId);
-      if(!url){ showToast('Nomor WhatsApp belum diatur di Settings', true); return; }
-      window.open(url, '_blank', 'noopener');
-    }
+    function openWhatsApp(requestId){ const url=getWhatsAppUrl(requestId); if(!url){ showToast('Nomor WhatsApp belum diatur di Settings', true); return; } window.open(url,'_blank','noopener'); }
 
-    // ------------------ Settings UI (removed Google fields) ------------------
-    function loadSettingsForm(){
-      const s = getCurrentSettings();
-      const v = document.getElementById('settingsView');
-      v.innerHTML = `
-        <h2 class="text-2xl font-bold mb-4">Settings / Pengaturan</h2>
-        <div class="mb-4"><label class="block text-sm font-semibold mb-1">Form Title</label><input id="settingFormTitle" class="w-full px-3 py-2 border rounded" value="${escapeHtml(s.form_title)}"></div>
-        <div class="mb-4"><label class="block text-sm font-semibold mb-1">Budget Year</label><input id="settingBudgetYear" class="w-full px-3 py-2 border rounded" value="${escapeHtml(s.budget_year)}"></div>
-        <div class="mb-4"><label class="block text-sm font-semibold mb-1">Organization Name</label><input id="settingOrganizationName" class="w-full px-3 py-2 border rounded" value="${escapeHtml(s.organization_name)}"></div>
-        <div class="mb-4"><label class="block text-sm font-semibold mb-1">Document Number Prefix</label><input id="settingDocNumberFormat" class="w-full px-3 py-2 border rounded" value="${escapeHtml(localStorage.getItem('atk_doc_prefix') || s.doc_number_format)}"><p class="text-xs text-gray-500 mt-1">Contoh: 0001 -> 0001/ATK/MM/YYYY</p></div>
-        <div class="mb-4"><label class="block text-sm font-semibold mb-1">Logo URL</label><input id="settingLogoUrl" class="w-full px-3 py-2 border rounded" value="${escapeHtml(s.logo_url)}"></div>
-        <div class="mb-4"><label class="block text-sm font-semibold mb-1">WhatsApp Number (contoh: 628123...)</label><input id="settingWhatsAppNumber" class="w-full px-3 py-2 border rounded" value="${escapeHtml(localStorage.getItem('atk_whatsapp_number') || s.whatsapp_number || '')}"></div>
+    // ---------- Settings apply ----------
+    applySettingsToUI = function(){ const s=getCurrentSettings(); document.querySelectorAll('.logo-container').forEach(el => el.innerHTML = getLogoHTML(s.logo_url)); const submitBtn = document.getElementById('submitRequestBtn'); if(submitBtn) submitBtn.textContent = s.submit_button_text; }
 
-        <div class="flex gap-4 mt-4">
-          <button id="saveSettingsBtn" class="px-4 py-2 bg-green-600 text-white rounded">💾 Save Settings</button>
-          <button id="cancelSettingsBtn" class="px-4 py-2 bg-gray-500 text-white rounded">Cancel</button>
-        </div>
-        <p class="text-xs text-gray-500 mt-3">Note: Google Client ID and Spreadsheet settings have been removed — the app will work in local/demo mode unless adapter is initialized separately.</p>
-      `;
-      document.getElementById('saveSettingsBtn').addEventListener('click', saveSettings);
-      document.getElementById('cancelSettingsBtn').addEventListener('click', ()=> switchView('form'));
-    }
-
-    async function saveSettings(){
-      const s = {
-        form_title: document.getElementById('settingFormTitle').value.trim(),
-        budget_year: document.getElementById('settingBudgetYear').value.trim(),
-        organization_name: document.getElementById('settingOrganizationName').value.trim(),
-        doc_number_format: document.getElementById('settingDocNumberFormat').value.trim(),
-        logo_url: document.getElementById('settingLogoUrl').value.trim(),
-        whatsapp_number: document.getElementById('settingWhatsAppNumber').value.trim(),
-        submit_button_text: defaultConfig.submit_button_text,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      };
-      // save to localStorage for persistence
-      localStorage.setItem('atk_form_title', s.form_title);
-      localStorage.setItem('atk_budget_year', s.budget_year);
-      localStorage.setItem('atk_org', s.organization_name);
-      localStorage.setItem('atk_doc_prefix', s.doc_number_format);
-      localStorage.setItem('atk_logo', s.logo_url);
-      localStorage.setItem('atk_whatsapp_number', s.whatsapp_number);
-      appSettings = s;
-      applySettingsToUI();
-      showToast('Settings disimpan (lokal)');
-      switchView('form');
-      // if dataSdk present, you can still save settings to sheet via sdk.create(s), but omitted here.
-    }
-
-    // ------------------ Data handler (adapter -> app) ------------------
-    const dataHandler = {
-      onDataChanged(data){
-        const settingsRecords = data.filter(r=>r.recordType==='settings');
-        appSettings = settingsRecords.length>0 ? settingsRecords[0] : appSettings;
-        currentRequests = data;
-        applySettingsToUI();
-        if(currentView==='requests') renderAllRequests();
-        if(currentView==='form') updateDocumentNumber();
-      }
-    };
-
-    // ------------------ View switcher ------------------
-    function switchView(view){
-      currentView = view;
-      const ids = ['requestFormView','allRequestsView','verifierView','supervisorView','requestDetailView','settingsView'];
-      ids.forEach(id=>{ const el=document.getElementById(id); if(!el) return; el.classList.add('hidden'); });
-      if(view==='form') document.getElementById('requestFormView').classList.remove('hidden');
-      else if(view==='requests'){ document.getElementById('allRequestsView').classList.remove('hidden'); renderAllRequests(); }
-      else if(view==='verifier') document.getElementById('verifierView').classList.remove('hidden');
-      else if(view==='supervisor') document.getElementById('supervisorView').classList.remove('hidden');
-      else if(view==='detail') document.getElementById('requestDetailView').classList.remove('hidden');
-      else if(view==='settings') { document.getElementById('settingsView').classList.remove('hidden'); loadSettingsForm(); }
-    }
-    window.switchView = switchView;
-
-    // Print (helper)
-    window.printDocument = function(){ if(currentView!=='detail'){ showToast('Buka detail permintaan dulu', true); return; } setTimeout(()=>window.print(),150); };
-
-    // Hook top nav buttons
-    document.getElementById('newRequestBtn').addEventListener('click', ()=>{ resetForm(); switchView('form'); });
-    document.getElementById('viewRequestsBtn').addEventListener('click', ()=> switchView('requests'));
-    document.getElementById('verifierViewBtn').addEventListener('click', ()=> switchView('verifier'));
-    document.getElementById('supervisorViewBtn').addEventListener('click', ()=> switchView('supervisor'));
-    document.getElementById('settingsBtn').addEventListener('click', ()=> switchView('settings'));
-    document.getElementById('exportExcelBtnTop').addEventListener('click', ()=> exportAllRequestsToXLSXFiltered()); // top export uses current filter defaults (All)
-
-    // ------------------ Init app: attempt to init SDK if adapter present (no UI for clientId now) ---
-    async function init(){
-      // fallback settings
-      const lForm=localStorage.getItem('atk_form_title');
-      if(lForm) appSettings = Object.assign({}, getCurrentSettings());
-
-      // attempt to init adapter automatically if adapter and localStorage sheet/client exist (optional)
-      const sdk = ensureDataSdk();
-      const cid = localStorage.getItem('atk_google_client_id');
-      const sid = localStorage.getItem('atk_google_sheet_id');
-      if(sdk && sdk.init && cid && sid){
-        try{
-          const r = await sdk.init(dataHandler, {clientId: cid, spreadsheetId: sid});
-          if(r && r.isOk){ showToast('Terhubung ke Google Sheets'); }
-        }catch(e){ console.warn('sdk.init failed', e); }
-      } else {
-        if(!sdk) console.warn('dataSdk not available — running in local/demo mode');
-      }
-
-      renderFormView();
-      applySettingsToUI();
-
-      // prepare filters (month+year) for All Requests view
-      populateFilters();
-      document.getElementById('filterMonth').addEventListener('change', ()=> renderAllRequestsFiltered());
-      document.getElementById('filterYear').addEventListener('change', ()=> renderAllRequestsFiltered());
-      document.getElementById('exportFilteredBtn').addEventListener('click', ()=> exportAllRequestsToXLSXFiltered());
-    }
-
-    // ------------------ Filters: month & year ------------------
+    // ---------- Filters helpers ----------
     function populateFilters(){
-      const monthEl = document.getElementById('filterMonth');
-      const yearEl = document.getElementById('filterYear');
+      const monthEl = document.getElementById('filterMonth'); const yearEl = document.getElementById('filterYear');
       const months = ['All','01 - January','02 - February','03 - March','04 - April','05 - May','06 - June','07 - July','08 - August','09 - September','10 - October','11 - November','12 - December'];
       monthEl.innerHTML = months.map((m,i)=>`<option value="${i===0? 'all' : (String(i).padStart(2,'0'))}">${m}</option>`).join('');
-      // years: from currentYear-5 .. +2
-      const cy=(new Date()).getFullYear();
-      let options = '<option value="all">All</option>';
-      for(let y=cy+2; y>=cy-5; y--){ options += `<option value="${y}">${y}</option>`; }
-      yearEl.innerHTML = options;
+      const cy=(new Date()).getFullYear(); let options='<option value="all">All</option>'; for(let y=cy+2;y>=cy-5;y--){ options+=`<option value="${y}">${y}</option>`; } yearEl.innerHTML=options;
     }
 
     function renderAllRequestsFiltered(){
-      const month = document.getElementById('filterMonth').value; // 'all' or '01'..'12'
-      const year = document.getElementById('filterYear').value; // 'all' or '2025'
+      const month = document.getElementById('filterMonth').value;
+      const year = document.getElementById('filterYear').value;
       const container = document.getElementById('allRequestsList');
       const all = (currentRequests||[]).filter(r=>r.recordType==='request');
-      // apply filters
       const filtered = all.filter(r=>{
-        if(month !== 'all'){
-          const d = r.submissionDate ? new Date(r.submissionDate) : null;
-          const m = d ? String(d.getMonth()+1).padStart(2,'0') : null;
-          if(m !== month) return false;
-        }
-        if(year !== 'all'){
-          if(String(r.year) !== String(year)) return false;
-        }
+        if(month!=='all'){ const d = r.submissionDate ? new Date(r.submissionDate) : null; const m = d ? String(d.getMonth()+1).padStart(2,'0') : null; if(m !== month) return false; }
+        if(year !== 'all'){ if(String(r.year) !== String(year)) return false; }
         return true;
       });
       if(filtered.length===0){ container.innerHTML = '<p class="text-gray-500 text-center py-8">Tidak ada data sesuai filter</p>'; return; }
       container.innerHTML = '';
-      // re-use render card logic
       filtered.slice().sort((a,b)=> new Date(b.createdAt) - new Date(a.createdAt)).forEach(r=>{
         const card=document.createElement('div'); card.className='border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow';
         const statusBadge = `<span class="px-3 py-1 rounded-full text-sm font-semibold ${getStatusColor(r.status)}">${r.status}</span>`;
@@ -630,7 +603,7 @@
             <p class="text-sm text-gray-600"><strong>Date:</strong> ${formatDate(r.submissionDate)}</p>
           </div>
         `;
-        card.querySelector('.view-detail').addEventListener('click', ()=> window.viewRequestDetail(r.__backendId || r.documentNumber));
+        card.querySelector('.view-detail').addEventListener('click', ()=> viewRequestDetail(r.__backendId || r.documentNumber));
         card.querySelector('.open-wa').addEventListener('click', ()=> openWhatsApp(r.__backendId || r.documentNumber));
         card.querySelector('.delete-req').addEventListener('click', async (ev)=> {
           ev.stopPropagation();
@@ -642,6 +615,7 @@
             else { showToast('Gagal menghapus', true); console.error('delete error', result); }
           } else {
             currentRequests = currentRequests.filter(x => (x.__backendId || x.documentNumber) !== (r.__backendId || r.documentNumber));
+            saveLocalRequests();
             renderAllRequestsFiltered();
             showToast('Dihapus (local)');
           }
@@ -650,98 +624,196 @@
       });
     }
 
-    // ------------------ Export filtered data to XLSX ------------------
+    // ---------- Export XLSX filtered ----------
     function exportAllRequestsToXLSXFiltered(){
       const month = document.getElementById('filterMonth') ? document.getElementById('filterMonth').value : 'all';
       const year = document.getElementById('filterYear') ? document.getElementById('filterYear').value : 'all';
-      // select filtered array same way as renderAllRequestsFiltered
       const all = (currentRequests||[]).filter(r=>r.recordType==='request');
       const rows = all.filter(r=>{
-        if(month !== 'all'){
-          const d = r.submissionDate ? new Date(r.submissionDate) : null;
-          const m = d ? String(d.getMonth()+1).padStart(2,'0') : null;
-          if(m !== month) return false;
-        }
-        if(year !== 'all'){
-          if(String(r.year) !== String(year)) return false;
-        }
+        if(month !== 'all'){ const d = r.submissionDate ? new Date(r.submissionDate) : null; const m = d ? String(d.getMonth()+1).padStart(2,'0') : null; if(m !== month) return false; }
+        if(year !== 'all'){ if(String(r.year) !== String(year)) return false; }
         return true;
       });
-
       if(!rows || rows.length===0){ showToast('Tidak ada data untuk diexport (sesuai filter)', true); return; }
 
-      // Build worksheet data
       const wsData = [];
-      wsData.push([
-        'Backend ID','Document Number','Year','Work Unit','Submission Date','Submission Location','Requester Name','Requester NIP','Status','Verifier Name','Verifier NIP','Verification Date','Supervisor Name','Supervisor NIP','Supervisor Approval Date','Rejection Reason','Rejected By','Created At','Updated At','Items'
-      ]);
-
+      wsData.push(['Backend ID','Document Number','Year','Work Unit','Submission Date','Submission Location','Requester Name','Requester NIP','Status','Verifier Name','Verifier NIP','Verification Date','Supervisor Name','Supervisor NIP','Supervisor Approval Date','Rejection Reason','Rejected By','Created At','Updated At','Items']);
       rows.forEach(r=>{
-        let itemsText='';
-        try{
-          const items = typeof r.items === 'string' ? JSON.parse(r.items || '[]') : (r.items || []);
-          itemsText = items.map(it => { const notes = it.notes ? ` [${it.notes}]` : ''; return `${it.name} (${it.quantity})${notes}`; }).join(' ; ');
-        }catch(e){ itemsText = String(r.items||''); }
-        wsData.push([
-          r.__backendId || '',
-          r.documentNumber || '',
-          r.year || '',
-          r.workUnit || '',
-          r.submissionDate ? formatDate(r.submissionDate) : '',
-          r.submissionLocation || '',
-          r.requesterName || '',
-          r.requesterNIP || '',
-          r.status || '',
-          r.verifierName || '',
-          r.verifierNIP || '',
-          r.verificationDate || '',
-          r.supervisorName || '',
-          r.supervisorNIP || '',
-          r.supervisorApprovalDate || '',
-          r.rejectionReason || '',
-          r.rejectedBy || '',
-          r.createdAt || '',
-          r.updatedAt || '',
-          itemsText
-        ]);
+        let itemsText=''; try{ const items = typeof r.items === 'string' ? JSON.parse(r.items || '[]') : (r.items || []); itemsText = items.map(it => { const notes = it.notes ? ` [${it.notes}]` : ''; return `${it.name} (${it.quantity})${notes}`; }).join(' ; '); }catch(e){ itemsText = String(r.items||''); }
+        wsData.push([ r.__backendId||'', r.documentNumber||'', r.year||'', r.workUnit||'', r.submissionDate?formatDate(r.submissionDate):'', r.submissionLocation||'', r.requesterName||'', r.requesterNIP||'', r.status||'', r.verifierName||'', r.verifierNIP||'', r.verificationDate||'', r.supervisorName||'', r.supervisorNIP||'', r.supervisorApprovalDate||'', r.rejectionReason||'', r.rejectedBy||'', r.createdAt||'', r.updatedAt||'', itemsText ]);
       });
 
       const ws = XLSX.utils.aoa_to_sheet(wsData);
-      // auto width
-      const colWidths = wsData[0].map((h,i) => {
-        let max = h ? String(h).length : 10;
-        for(let r=1;r<wsData.length;r++){ const v = wsData[r][i]; if(v) max = Math.max(max, String(v).length); }
-        return { wch: Math.min(Math.max(max+2, 10), 60) };
-      });
+      const colWidths = wsData[0].map((h,i)=>{ let max = h? String(h).length:10; for(let r=1;r<wsData.length;r++){ const v=wsData[r][i]; if(v) max=Math.max(max,String(v).length);} return {wch: Math.min(Math.max(max+2,10),60)}; });
       ws['!cols'] = colWidths;
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, 'Permintaan_ATK');
-
-      const now = new Date();
-      const ts = now.toISOString().replace(/[:.]/g, '-');
-      const filename = `rekap_permintaan_atk_${ts}.xlsx`;
+      const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Permintaan_ATK');
+      const now=new Date(); const ts = now.toISOString().replace(/[:.]/g,'-'); const filename = `rekap_permintaan_atk_${ts}.xlsx`;
       XLSX.writeFile(wb, filename);
     }
 
-    // Also expose a top-level export that treats filters as 'All' by default
-    function exportAllRequestsToXLSX(){
-      // temporarily set filters to 'all'
-      const prevMonth = document.getElementById('filterMonth') ? document.getElementById('filterMonth').value : 'all';
-      const prevYear = document.getElementById('filterYear') ? document.getElementById('filterYear').value : 'all';
-      if(document.getElementById('filterMonth')) document.getElementById('filterMonth').value = 'all';
-      if(document.getElementById('filterYear')) document.getElementById('filterYear').value = 'all';
-      exportAllRequestsToXLSXFiltered();
-      if(document.getElementById('filterMonth')) document.getElementById('filterMonth').value = prevMonth;
-      if(document.getElementById('filterYear')) document.getElementById('filterYear').value = prevYear;
+    // ---------- Workflow: verify / approve / reject ----------
+    function findRequestById(id){ return currentRequests.find(r => (r.__backendId && r.__backendId === id) || (r.documentNumber && r.documentNumber === id)); }
+
+    function renderVerifierDashboard(){
+      const container=document.getElementById('verifierRequestsList'); if(!container) return;
+      const pending=(currentRequests||[]).filter(r=>r.recordType==='request' && r.status==='Pending Verification');
+      if(pending.length===0){ container.innerHTML='<p class="text-gray-500 text-center py-8">Tidak ada permintaan yang menunggu verifikasi</p>'; return; }
+      container.innerHTML = pending.sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt)).map(r=>`
+        <div class="border border-yellow-200 bg-yellow-50 rounded-lg p-4 hover:shadow-md transition-shadow cursor-pointer" data-id="${r.__backendId||r.documentNumber}">
+          <div class="flex justify-between items-start mb-2">
+            <div>
+              <h3 class="font-bold text-lg text-gray-800">${r.documentNumber}</h3>
+              <p class="text-sm text-gray-600">${r.workUnit} - ${r.year}</p>
+            </div>
+            <span class="px-3 py-1 rounded-full text-sm font-semibold bg-yellow-200 text-yellow-800">Step 1: Pending Verification</span>
+          </div>
+          <p class="text-sm text-gray-700 mb-2"><strong>Requester:</strong> ${r.requesterName} (${r.requesterNIP})</p>
+          <p class="text-sm text-gray-600 mb-3"><strong>Date:</strong> ${formatDate(r.submissionDate)}</p>
+          <div class="flex gap-2">
+            <button class="verify-now px-4 py-2 bg-green-600 text-white rounded" data-id="${r.__backendId||r.documentNumber}">✓ Verify (Open)</button>
+            <button class="reject-now px-4 py-2 bg-red-600 text-white rounded" data-id="${r.__backendId||r.documentNumber}">✗ Reject</button>
+          </div>
+        </div>
+      `).join('');
+      container.querySelectorAll('.verify-now').forEach(btn=>btn.addEventListener('click',e=>{ const id=e.currentTarget.getAttribute('data-id'); viewRequestDetail(id); }));
+      container.querySelectorAll('.reject-now').forEach(btn=>btn.addEventListener('click',e=>{ const id=e.currentTarget.getAttribute('data-id'); viewRequestDetail(id); setTimeout(()=> showRejectModal('verifier'),200); }));
     }
 
-    // ------------------ Init & start ------------------
-    init();
+    function renderSupervisorDashboard(){
+      const container=document.getElementById('supervisorRequestsList'); if(!container) return;
+      const pending=(currentRequests||[]).filter(r=>r.recordType==='request' && r.status==='Verified - Pending Approval');
+      if(pending.length===0){ container.innerHTML='<p class="text-gray-500 text-center py-8">Tidak ada permintaan yang menunggu persetujuan akhir</p>'; return; }
+      container.innerHTML = pending.sort((a,b)=>new Date(b.verificationDate||b.updatedAt)-new Date(a.verificationDate||a.updatedAt)).map(r=>`
+        <div class="border border-blue-200 bg-blue-50 rounded-lg p-4 hover:shadow-md transition-shadow cursor-pointer" data-id="${r.__backendId||r.documentNumber}">
+          <div class="flex justify-between items-start mb-2">
+            <div>
+              <h3 class="font-bold text-lg text-gray-800">${r.documentNumber}</h3>
+              <p class="text-sm text-gray-600">${r.workUnit} - ${r.year}</p>
+            </div>
+            <span class="px-3 py-1 rounded-full text-sm font-semibold bg-blue-200 text-blue-800">Step 2: Pending Final Approval</span>
+          </div>
+          <p class="text-sm text-gray-700 mb-2"><strong>Requester:</strong> ${r.requesterName} (${r.requesterNIP})</p>
+          <p class="text-sm text-gray-700 mb-2"><strong>Verified by:</strong> ${r.verifierName} (${r.verifierNIP})</p>
+          <p class="text-sm text-gray-600 mb-3"><strong>Verification Date:</strong> ${formatDate(r.verificationDate)}</p>
+          <div class="flex gap-2">
+            <button class="approve-now px-4 py-2 bg-green-600 text-white rounded" data-id="${r.__backendId||r.documentNumber}">✓ Approve (Open)</button>
+            <button class="reject-now px-4 py-2 bg-red-600 text-white rounded" data-id="${r.__backendId||r.documentNumber}">✗ Reject</button>
+          </div>
+        </div>
+      `).join('');
+      container.querySelectorAll('.approve-now').forEach(btn=>btn.addEventListener('click',e=>{ const id=e.currentTarget.getAttribute('data-id'); viewRequestDetail(id); }));
+      container.querySelectorAll('.reject-now').forEach(btn=>btn.addEventListener('click',e=>{ const id=e.currentTarget.getAttribute('data-id'); viewRequestDetail(id); setTimeout(()=> showRejectModal('supervisor'),200); }));
+    }
 
-    // expose export for top button
-    window.exportAllRequestsToXLSXFiltered = exportAllRequestsToXLSXFiltered;
-    window.exportAllRequestsToXLSX = exportAllRequestsToXLSX;
+    async function verifyRequest(){
+      const verifierNameEl=document.getElementById('verifierName'); const verifierNIPEl=document.getElementById('verifierNIP');
+      if(!verifierNameEl || !verifierNIPEl){ showToast('Form verifikator tidak ditemukan', true); return; }
+      const verifierName = verifierNameEl.value.trim(); const verifierNIP = verifierNIPEl.value.trim();
+      if(!verifierName){ showToast('Please enter verifikator name', true); return; } if(!verifierNIP){ showToast('Please enter verifikator NIP', true); return; }
+      const req = findRequestById(editingRequestId); if(!req){ showToast('Request not found', true); return; }
 
+      req.status='Verified - Pending Approval'; req.verifierName=verifierName; req.verifierNIP=verifierNIP; req.verificationDate=new Date().toISOString().split('T')[0]; req.rejectionReason=''; req.rejectedBy=''; req.updatedAt=new Date().toISOString();
+
+      const sdk = ensureDataSdk();
+      if(sdk && sdk.update){ const res = await sdk.update(req); if(!(res && res.isOk)) showToast('Verified locally (SDK update failed)', true); else showToast('Request verified! Sent to Penanggung Jawab'); } else showToast('Request verified (local)');
+
+      saveLocalRequests(); renderVerifierDashboard(); renderSupervisorDashboard(); switchView('verifier');
+    }
+
+    async function approveRequestFinal(){
+      const supervisorNameEl=document.getElementById('supervisorName'); const supervisorNIPEl=document.getElementById('supervisorNIP');
+      if(!supervisorNameEl || !supervisorNIPEl){ showToast('Form penanggung jawab tidak ditemukan', true); return; }
+      const supervisorName = supervisorNameEl.value.trim(); const supervisorNIP = supervisorNIPEl.value.trim();
+      if(!supervisorName){ showToast('Please enter penanggung jawab name', true); return; } if(!supervisorNIP){ showToast('Please enter penanggung jawab NIP', true); return; }
+      const req = findRequestById(editingRequestId); if(!req){ showToast('Request not found', true); return; }
+
+      req.status='Fully Approved'; req.supervisorName=supervisorName; req.supervisorNIP=supervisorNIP; req.supervisorApprovalDate=new Date().toISOString().split('T')[0]; req.rejectionReason=''; req.rejectedBy=''; req.updatedAt=new Date().toISOString();
+
+      const sdk = ensureDataSdk();
+      if(sdk && sdk.update){ const res = await sdk.update(req); if(!(res && res.isOk)) showToast('Approved locally (SDK update failed)', true); else showToast('Request fully approved! Ready for goods release'); } else showToast('Request approved (local)');
+      saveLocalRequests(); renderVerifierDashboard(); renderSupervisorDashboard(); switchView('supervisor');
+    }
+
+    function showRejectModal(role){
+      const modal=document.createElement('div'); modal.className='modal-backdrop';
+      modal.innerHTML = `<div class="modal-content"><h3 class="text-xl font-bold mb-3">Reject Request</h3><p class="text-gray-700 mb-3">Please provide reason for rejection:</p><textarea id="rejectionReasonInput" class="w-full p-2 border rounded mb-3" rows="4" placeholder="Enter reason..."></textarea><div class="flex gap-3 justify-end"><button id="cancelRejectBtn" class="px-4 py-2 bg-gray-500 text-white rounded">Cancel</button><button id="confirmRejectBtn" class="px-4 py-2 bg-red-600 text-white rounded">Confirm Reject</button></div></div>`;
+      document.body.appendChild(modal);
+      document.getElementById('cancelRejectBtn').addEventListener('click', ()=> modal.remove());
+      document.getElementById('confirmRejectBtn').addEventListener('click', async ()=>{
+        const reason = document.getElementById('rejectionReasonInput').value.trim(); if(!reason){ alert('Please provide rejection reason'); return; }
+        const req = findRequestById(editingRequestId); if(!req){ showToast('Request not found', true); modal.remove(); return; }
+        if(role==='verifier'){ const vname=document.getElementById('verifierName')?document.getElementById('verifierName').value.trim():''; const vnip=document.getElementById('verifierNIP')?document.getElementById('verifierNIP').value.trim():''; req.status='Rejected by Verifier'; req.verifierName=vname; req.verifierNIP=vnip; req.verificationDate=new Date().toISOString().split('T')[0]; req.rejectionReason=reason; req.rejectedBy='Verifikator'; req.updatedAt=new Date().toISOString(); }
+        else { const sname=document.getElementById('supervisorName')?document.getElementById('supervisorName').value.trim():''; const snip=document.getElementById('supervisorNIP')?document.getElementById('supervisorNIP').value.trim():''; req.status='Rejected by Supervisor'; req.supervisorName=sname; req.supervisorNIP=snip; req.supervisorApprovalDate=new Date().toISOString().split('T')[0]; req.rejectionReason=reason; req.rejectedBy='Penanggung Jawab'; req.updatedAt=new Date().toISOString(); }
+        const sdk=ensureDataSdk(); if(sdk && sdk.update){ const res=await sdk.update(req); if(!(res && res.isOk)) console.warn('reject update failed',res); }
+        saveLocalRequests(); showToast('Request rejected'); modal.remove(); renderVerifierDashboard(); renderSupervisorDashboard(); switchView(role==='verifier'?'verifier':'supervisor');
+      });
+    }
+
+    // expose for detail view buttons
+    window.verifyRequest = verifyRequest;
+    window.approveRequestFinal = approveRequestFinal;
+    window.showRejectModal = showRejectModal;
+
+    // ---------- Print ----------
+    window.printDocument = function(){ if(currentView !== 'detail'){ showToast('Mohon buka detail permintaan terlebih dahulu', true); return; } setTimeout(()=> window.print(), 150); };
+
+    // ---------- Init ----------
+    document.getElementById('newRequestBtn').addEventListener('click', ()=>{ resetForm(); switchView('form'); });
+    document.getElementById('viewRequestsBtn').addEventListener('click', ()=> switchView('requests'));
+    document.getElementById('verifierViewBtn').addEventListener('click', ()=> switchView('verifier'));
+    document.getElementById('supervisorViewBtn').addEventListener('click', ()=> switchView('supervisor'));
+    document.getElementById('settingsBtn').addEventListener('click', ()=> switchView('settings'));
+    document.getElementById('exportExcelBtnTop').addEventListener('click', ()=> exportAllRequestsToXLSXFiltered());
+
+    function switchView(view){
+      currentView = view;
+      ['requestFormView','allRequestsView','verifierView','supervisorView','requestDetailView','settingsView'].forEach(id=>{ const el=document.getElementById(id); if(!el) return; el.classList.add('hidden'); });
+      if(view==='form') document.getElementById('requestFormView').classList.remove('hidden');
+      else if(view==='requests'){ document.getElementById('allRequestsView').classList.remove('hidden'); renderAllRequestsFiltered(); }
+      else if(view==='verifier'){ document.getElementById('verifierView').classList.remove('hidden'); renderVerifierDashboard(); }
+      else if(view==='supervisor'){ document.getElementById('supervisorView').classList.remove('hidden'); renderSupervisorDashboard(); }
+      else if(view==='detail') document.getElementById('requestDetailView').classList.remove('hidden');
+      else if(view==='settings'){ document.getElementById('settingsView').classList.remove('hidden'); loadSettingsForm(); }
+    }
+    window.switchView = switchView;
+
+    // Filters
+    populateFilters();
+    document.getElementById('filterMonth').addEventListener('change', ()=> renderAllRequestsFiltered());
+    document.getElementById('filterYear').addEventListener('change', ()=> renderAllRequestsFiltered());
+    document.getElementById('exportFilteredBtn').addEventListener('click', ()=> exportAllRequestsToXLSXFiltered());
+
+    // load local data first, then try adapter init
+    loadLocalRequests();
+    // If adapter exists, init it so it can override local data (if any)
+    const sdk = ensureDataSdk();
+    if(sdk && sdk.init){
+      sdk.init({
+        onDataChanged(data){
+          // adapter returns array of records including settings; merge
+          if(Array.isArray(data)){
+            // adapter sends entire dataset; replace currentRequests & settings
+            const settingsRecords = data.filter(r=>r.recordType==='settings');
+            appSettings = settingsRecords.length>0 ? settingsRecords[0] : appSettings;
+            currentRequests = data;
+            saveLocalRequests();
+            applySettingsToUI();
+            if(currentView==='requests') renderAllRequestsFiltered();
+            if(currentView==='verifier') renderVerifierDashboard();
+            if(currentView==='supervisor') renderSupervisorDashboard();
+            if(currentView==='form') updateDocumentNumber();
+          }
+        }
+      }).then(res=>{
+        if(res && res.isOk) console.log('dataSdk initialized (adapter)');
+      }).catch(e=>console.warn('adapter init error', e));
+    }
+
+    // final render
+    renderFormView();
+    applySettingsToUI();
+    renderVerifierDashboard();
+    renderSupervisorDashboard();
   }); // DOMContentLoaded end
   </script>
 </body>
