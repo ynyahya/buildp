@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Form Permintaan ATK - BPS</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- Signature Pad -->
   <script src="https://cdn.jsdelivr.net/npm/signature_pad@4.0.0/dist/signature_pad.umd.min.js"></script>
   <style>
     body { box-sizing: border-box; }
@@ -14,12 +13,13 @@
     .print-section { page-break-inside: avoid; }
     @media print { .no-print { display: none !important; } body { background: white !important; margin: 0; padding: 12px; } }
     .signature-card { border: 1px dashed #c7d2fe; border-radius: 8px; padding: 8px; background: #fafafa; }
-    canvas.signature-canvas { width: 100% !important; height: 300px !important; touch-action: none; border-radius: 6px; background: white; border: 1px solid #e5e7eb; }
+    canvas.signature-canvas { width: 100% !important; height: 320px !important; touch-action: none; border-radius: 6px; background: white; border: 1px solid #e5e7eb; display:block; }
+    .sig-thumb { display:block; max-width:100%; height:auto; border:1px solid #e5e7eb; background:white; padding:6px; border-radius:6px; }
+    .signed-box { background:#ecfdf5; border:1px solid #bbf7d0; padding:12px; border-radius:8px; }
   </style>
 </head>
 <body class="bg-gray-50 min-h-screen text-gray-800">
   <div id="app" class="max-w-6xl mx-auto p-6">
-
     <div class="no-print flex gap-3 mb-6">
       <button id="btnNew" class="px-4 py-2 bg-blue-600 text-white rounded shadow-sm">📝 Permintaan Baru</button>
       <button id="btnAll" class="px-4 py-2 bg-gray-700 text-white rounded shadow-sm">📋 Semua Permintaan</button>
@@ -29,7 +29,7 @@
       <button id="btnExportAll" class="ml-auto px-4 py-2 bg-indigo-700 text-white rounded shadow-sm">📤 Export Excel</button>
     </div>
 
-    <!-- Form view -->
+    <!-- Form -->
     <div id="viewForm" class="bg-white rounded shadow p-6 print-section">
       <div class="text-center mb-6">
         <h1 id="uiFormTitle" class="text-2xl font-bold">Form Permintaan ATK</h1>
@@ -86,7 +86,7 @@
 
         <div class="mt-4 p-3 bg-blue-50 border rounded">
           <div class="flex items-start gap-3">
-            <div class="w-1/2">
+            <div class="w-full">
               <p class="text-sm font-semibold mb-1">Tanda Tangan Digital (Pemohon)</p>
               <div class="signature-card">
                 <canvas id="requesterSignatureCanvas" class="signature-canvas"></canvas>
@@ -95,14 +95,10 @@
                   <button id="reqSigSave" class="px-3 py-1 bg-green-600 text-white rounded">Save Signature</button>
                 </div>
               </div>
-              <p class="text-xs text-gray-600 mt-2">ℹ️ Petunjuk: Tanda tangan gunakan mouse atau sentuh. Setelah disimpan, tanda tangan akan tercantum pada dokumen.</p>
-            </div>
-            <div class="flex-1 text-sm text-gray-700">
-              <!-- tambahan instruksi jika perlu -->
+              <p class="text-xs text-gray-600 mt-2">ℹ️ Petunjuk: Tanda tangan gunakan mouse atau sentuh. Setelah disimpan, tanda tangan akan muncul pada dokumen.</p>
             </div>
           </div>
         </div>
-
       </div>
 
       <div class="mt-6">
@@ -146,7 +142,7 @@
     <!-- Detail -->
     <div id="viewDetail" class="hidden bg-white rounded shadow p-6 print-section"></div>
 
-    <!-- Settings with Document Format & Prefix & WhatsApp number -->
+    <!-- Settings -->
     <div id="viewSettings" class="hidden bg-white rounded shadow p-6">
       <h2 class="text-xl font-bold mb-4">Pengaturan</h2>
       <div class="mb-4">
@@ -167,7 +163,7 @@
       <div class="mb-4">
         <label class="text-sm">Document Number Format</label>
         <input id="settingDocFormat" class="mt-2 w-full px-3 py-2 border rounded" placeholder="{AUTO}/ATK/{MM}/{YYYY}">
-        <p class="text-xs text-gray-500 mt-1">Gunakan placeholder <code>{AUTO}</code>, <code>{MM}</code>, <code>{YYYY}</code>. Contoh default: <code>{AUTO}/ATK/{MM}/{YYYY}</code></p>
+        <p class="text-xs text-gray-500 mt-1">Gunakan placeholder <code>{AUTO}</code>, <code>{MM}</code>, <code>{YYYY}</code>.</p>
         <div class="mt-2">
           <strong>Preview:</strong> <span id="docFormatPreview" class="font-mono"></span>
         </div>
@@ -175,8 +171,7 @@
 
       <div class="mb-4">
         <label class="text-sm">Nomor WhatsApp Notifikasi</label>
-        <input id="settingWhatsAppNumber" class="mt-2 w-full px-3 py-2 border rounded" placeholder="628123456789 (tanpa + atau spasi)">
-        <p class="text-xs text-gray-500 mt-1">Nomor untuk tombol "Buka WA". Jika kosong, pesan akan disalin ke clipboard.</p>
+        <input id="settingWhatsAppNumber" class="mt-2 w-full px-3 py-2 border rounded" placeholder="628123456789">
       </div>
 
       <div class="mb-4">
@@ -198,7 +193,7 @@
   <div id="toastContainer"></div>
 
 <script>
-/* STORAGE KEYS */
+/* storage keys */
 const STORAGE_KEY = 'atk_requests_v1';
 const SETTINGS_KEY = 'atk_settings_v1';
 
@@ -208,7 +203,7 @@ function saveLocalRequests(){ try{ localStorage.setItem(STORAGE_KEY, JSON.string
 function loadSettings(){ try{ const s = localStorage.getItem(SETTINGS_KEY); return s?JSON.parse(s):null }catch(e){return null} }
 function saveSettingsToStorage(){ localStorage.setItem(SETTINGS_KEY, JSON.stringify(appSettings)); }
 
-/* UI utils */
+/* ui helpers */
 function showToast(msg, isError=false){ const el=document.createElement('div'); el.className=`toast ${isError?'error':''}`; el.textContent=msg; document.body.appendChild(el); setTimeout(()=>el.remove(),3500); }
 function escapeHtml(s){ if(!s) return ''; return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function formatDate(d){ if(!d) return '-'; const date=new Date(d); const months=['January','February','March','April','May','June','July','August','September','October','November','December']; return `${date.getDate()} ${months[date.getMonth()]} ${date.getFullYear()}`; }
@@ -228,26 +223,17 @@ let appSettings = loadSettings() || {
 /* signature pads */
 let requesterSigPad=null, verifierSigPad=null, supervisorSigPad=null;
 
-/* DOM refs */
-const viewForm = document.getElementById('viewForm');
-const viewAll = document.getElementById('viewAll');
-const viewVerifier = document.getElementById('viewVerifier');
-const viewSupervisor = document.getElementById('viewSupervisor');
-const viewSettings = document.getElementById('viewSettings');
-const viewDetail = document.getElementById('viewDetail');
-
+/* init years */
 const yearSelect = document.getElementById('yearSelect');
 const filterYear = document.getElementById('filterYear');
-
-/* init years */
 function initYearDropdowns(){
   const currentYear = new Date().getFullYear();
-  for(let i=currentYear-5;i<=currentYear+5;i++){ const opt=document.createElement('option'); opt.value=i; opt.textContent=i; yearSelect.appendChild(opt); const o2=opt.cloneNode(true); filterYear.appendChild(o2); }
+  for(let i=currentYear-5;i<=currentYear+5;i++){ const option=document.createElement('option'); option.value=i; option.textContent=i; yearSelect.appendChild(option); const opt2=option.cloneNode(true); filterYear.appendChild(opt2); }
   yearSelect.value = appSettings.budget_year;
   filterYear.value = appSettings.budget_year;
 }
 
-/* build preview example for doc format */
+/* document number */
 function buildDocFormatPreview(){
   const fmt = appSettings.doc_format || "{AUTO}/ATK/{MM}/{YYYY}";
   const sampleDate = new Date();
@@ -255,22 +241,17 @@ function buildDocFormatPreview(){
   const yyyy = sampleDate.getFullYear();
   const sampleAuto = (appSettings.doc_prefix||'1').replace(/^0+/,'') || '1';
   const padded = (""+sampleAuto).padStart(4,'0');
-  const preview = fmt.replace(/\{AUTO\}/g, padded).replace(/\{MM\}/g, mm).replace(/\{YYYY\}/g, yyyy);
-  document.getElementById('docFormatPreview').textContent = preview;
+  document.getElementById('docFormatPreview').textContent = fmt.replace(/\{AUTO\}/g, padded).replace(/\{MM\}/g, mm).replace(/\{YYYY\}/g, yyyy);
 }
 
-/* generate document number using format and prefix */
 function generateDocumentNumber(){
   const year = yearSelect.value || (new Date()).getFullYear().toString();
   const date = document.getElementById('submissionDate').value || (new Date()).toISOString().split('T')[0];
   const month = ("0"+(new Date(date).getMonth()+1)).slice(-2);
 
   const existingNumbers = currentRequests
-    .filter(r=> r.recordType==='request' && r.documentNumber)
-    .map(r=>{
-      const first = (r.documentNumber.split('/')[0]||'').replace(/\D/g,'');
-      return parseInt(first,10) || 0;
-    })
+    .filter(r=> r.recordType==='request')
+    .map(r=> { const first = (r.documentNumber||'').split('/')[0]||''; return parseInt(first.replace(/\D/g,''))||0; })
     .filter(n=>n>0);
 
   const prefixNum = parseInt(String(appSettings.doc_prefix || '1').replace(/^0+/,'')) || 1;
@@ -278,20 +259,9 @@ function generateDocumentNumber(){
   const paddedAuto = (""+nextNumber).padStart(4,'0');
 
   const fmt = appSettings.doc_format || "{AUTO}/ATK/{MM}/{YYYY}";
-  const result = fmt.replace(/\{AUTO\}/g, paddedAuto).replace(/\{MM\}/g, month).replace(/\{YYYY\}/g, year);
-  return result;
+  return fmt.replace(/\{AUTO\}/g, paddedAuto).replace(/\{MM\}/g, month).replace(/\{YYYY\}/g, year);
 }
-
-/* UPDATE document number input */
-function updateDocumentNumber(){
-  try{
-    const docInput = document.getElementById('documentNumber');
-    if(!docInput) return;
-    docInput.value = generateDocumentNumber();
-  }catch(e){
-    console.error('updateDocumentNumber error', e);
-  }
-}
+function updateDocumentNumber(){ const docInput=document.getElementById('documentNumber'); if(docInput) docInput.value = generateDocumentNumber(); }
 
 /* items table */
 function addItemRow(name='', qty=1, unit=''){ const tbody=document.getElementById('itemsTableBody'); const idx=tbody.children.length+1; const tr=document.createElement('tr'); tr.innerHTML = `<td class="p-2 border text-center">${idx}</td><td class="p-2 border"><input class="item-name w-full px-2 py-1 border rounded" value="${escapeHtml(name)}" placeholder="Masukkan nama item"></td><td class="p-2 border text-center"><input type="number" min="1" class="item-quantity w-20 px-2 py-1 border rounded" value="${escapeHtml(qty)}"></td><td class="p-2 border"><input class="item-unit w-full px-2 py-1 border rounded" value="${escapeHtml(unit)}" placeholder="Satuan (contoh: pcs)"></td><td class="p-2 border text-center"><button class="delete-row px-3 py-1 bg-red-500 text-white rounded">Hapus</button></td>`; tbody.appendChild(tr); tr.querySelector('.delete-row').addEventListener('click', ()=>{ tr.remove(); updateRowNumbers(); }); }
@@ -302,7 +272,7 @@ function getItemsFromTable(){ const rows=Array.from(document.getElementById('ite
 function fitToContainer(canvas){ const ratio=Math.max(window.devicePixelRatio||1,1); const w=canvas.offsetWidth; const h=canvas.offsetHeight; canvas.width=Math.floor(w*ratio); canvas.height=Math.floor(h*ratio); const ctx=canvas.getContext('2d'); ctx.scale(ratio, ratio); }
 function initRequestSignature(){ const canvas=document.getElementById('requesterSignatureCanvas'); if(!canvas) return; fitToContainer(canvas); requesterSigPad = new SignaturePad(canvas, { penColor: "rgb(0,80,160)" }); window.addEventListener('resize', ()=>{ try{ fitToContainer(canvas); }catch(e){} }); }
 
-/* rendering helpers */
+/* rendering dashboards */
 function getStatusColorClass(status){ switch(status){ case 'Pending Verification': return 'bg-yellow-200 text-yellow-800'; case 'Verified - Pending Approval': return 'bg-blue-200 text-blue-800'; case 'Fully Approved': return 'bg-green-200 text-green-800'; case 'Rejected by Verifier': case 'Rejected by Supervisor': return 'bg-red-200 text-red-800'; default: return 'bg-gray-200 text-gray-800'; } }
 
 function renderAllRequests(){
@@ -346,7 +316,7 @@ function renderVerifierDashboard(){
 function renderSupervisorDashboard(){
   const container=document.getElementById('supervisorRequestsList');
   const pending = currentRequests.filter(r=>r.recordType==='request' && r.status==='Verified - Pending Approval').sort((a,b)=> new Date(b.updatedAt||b.createdAt)-new Date(a.updatedAt||a.createdAt));
-  if(pending.length===0){ container.innerHTML='<p class="text-gray-500 py-6 text-center">Tidak ada permintaan menunggu persetujuan akhir</p>'; return; }
+  if(pending.length===0){ container.innerHTML='<p class="text-gray-500 py-6 text-center'>Tidak ada permintaan menunggu persetujuan akhir</p>'; return; }
   container.innerHTML = pending.map(r=>`<div class="p-4 border rounded cursor-pointer hover:shadow-sm" onclick="viewRequestDetail('${r.__id}')"><div class="flex justify-between"><div><h3 class="font-bold">${escapeHtml(r.documentNumber)}</h3><p class="text-sm text-gray-600">${escapeHtml(r.workUnit)} - ${escapeHtml(r.year)}</p></div><span class="px-3 py-1 rounded-full bg-blue-200 text-blue-800">Step 2: Pending Final Approval</span></div><p class="text-sm text-gray-700 mt-2"><strong>Requester:</strong> ${escapeHtml(r.requesterName)} (${escapeHtml(r.requesterNIP)})</p></div>`).join('');
 }
 
@@ -376,8 +346,8 @@ function submitRequest(){
     documentNumber: docNumber,
     year, workUnit, items, submissionDate, submissionLocation,
     requesterName, requesterNIP, requesterSignature: reqSignature,
-    status: 'Pending Verification', verifierName:'', verifierNIP:'', verificationDate:'',
-    supervisorName:'', supervisorNIP:'', supervisorApprovalDate:'', rejectionReason:'', rejectedBy:'',
+    status: 'Pending Verification', verifierName:'', verifierNIP:'', verificationDate:'', verifierSignature:null,
+    supervisorName:'', supervisorNIP:'', supervisorApprovalDate:'', supervisorSignature:null, rejectionReason:'', rejectedBy:'',
     createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
   };
 
@@ -402,7 +372,7 @@ function resetForm(){
 
 function deleteRequest(id, event){ if(event) event.stopPropagation(); const idx=currentRequests.findIndex(r=>r.__id===id); if(idx===-1){ showToast('Permintaan tidak ditemukan', true); return; } if(!confirm('Yakin ingin menghapus permintaan ini?')) return; currentRequests.splice(idx,1); saveLocalRequests(); renderAllRequests(); renderVerifierDashboard(); renderSupervisorDashboard(); showToast('Permintaan berhasil dihapus'); }
 
-/* WhatsApp: use appSettings.whatsapp_number if set, else copy to clipboard */
+/* WhatsApp helper */
 function openWhatsAppFor(id){
   const r = currentRequests.find(x => x.__id === id);
   if(!r){ showToast('Request not found', true); return; }
@@ -426,10 +396,11 @@ function openWhatsAppFor(id){
   }
 }
 
-/* Detail view (with verifikator & supervisor signature flows) */
+/* DETAIL view (with goods release showing 3 ttd) */
 function viewRequestDetail(id){
   const r = currentRequests.find(x => x.__id === id);
   if(!r) return;
+  const viewDetail = document.getElementById('viewDetail');
   viewDetail.innerHTML = `
     <div class="no-print mb-4">
       <button id="backFromDetail" class="px-3 py-2 bg-gray-500 text-white rounded">← Back</button>
@@ -472,20 +443,45 @@ function viewRequestDetail(id){
         <div><p class="text-sm font-semibold">NIP</p><p>${escapeHtml(r.requesterNIP)}</p></div>
       </div>
       <div class="mb-4">
-        <div class="p-4 bg-green-50 border rounded">
+        <div class="signed-box">
           <p class="font-semibold text-green-700">✓ DIGITALLY SIGNED</p>
-          ${r.requesterSignature?`<img src="${r.requesterSignature}" style="max-width:320px;display:block;margin-top:8px;border:1px solid #e5e7eb;padding:4px;border-radius:6px;">`:`<p class="text-sm text-gray-600">No signature saved</p>`}
+          ${r.requesterSignature?`<img src="${r.requesterSignature}" class="sig-thumb" style="max-width:360px;margin-top:8px;">`:`<p class="text-sm text-gray-600">No signature saved</p>`}
           <p class="text-xs text-gray-600 mt-2">Signed by: ${escapeHtml(r.requesterName)} | NIP: ${escapeHtml(r.requesterNIP)} | Date: ${formatDate(r.submissionDate)}</p>
         </div>
       </div>
     </div>
 
+    <!-- GOODS RELEASE SECTION with three signatures -->
+    <div class="border-t pt-6">
+      <h3 class="text-center font-bold mb-6">GOODS RELEASE SECTION</h3>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div class="text-center">
+          <p class="text-sm font-semibold mb-4">Verifikator</p>
+          ${r.verifierSignature?`<div class="signed-box"><img src="${r.verifierSignature}" class="sig-thumb" style="max-width:320px;margin:auto;"><p class="text-xs text-gray-600 mt-2">Signed by: ${escapeHtml(r.verifierName)} | NIP: ${escapeHtml(r.verifierNIP)} | Date: ${escapeHtml(r.verificationDate)}</p></div>`: '<p class="text-gray-500 text-sm">Not verified</p>'}
+        </div>
+
+        <div class="text-center">
+          <p class="text-sm font-semibold mb-4">Penanggung Jawab</p>
+          ${r.supervisorSignature?`<div class="signed-box"><img src="${r.supervisorSignature}" class="sig-thumb" style="max-width:320px;margin:auto;"><p class="text-xs text-gray-600 mt-2">Signed by: ${escapeHtml(r.supervisorName)} | NIP: ${escapeHtml(r.supervisorNIP)} | Date: ${escapeHtml(r.supervisorApprovalDate)}</p></div>`: '<p class="text-gray-500 text-sm">Not approved</p>'}
+        </div>
+
+        <div class="text-center">
+          <p class="text-sm font-semibold mb-4">Requester</p>
+          ${r.requesterSignature?`<div class="signed-box"><img src="${r.requesterSignature}" class="sig-thumb" style="max-width:320px;margin:auto;"><p class="text-xs text-gray-600 mt-2">Signed by: ${escapeHtml(r.requesterName)} | NIP: ${escapeHtml(r.requesterNIP)} | Date: ${formatDate(r.submissionDate)}</p></div>`: '<p class="text-gray-500 text-sm">No signature</p>'}
+        </div>
+      </div>
+
+      ${r.rejectionReason?`<div class="mt-6 p-4 bg-red-50 border rounded"><p class="text-red-700 font-semibold">Rejected by: ${escapeHtml(r.rejectedBy)}</p><p class="text-red-700 mt-2">${escapeHtml(r.rejectionReason)}</p></div>`:''}
+    </div>
+
     <div id="verifierSection"></div>
     <div id="supervisorSection"></div>
   `;
+
   document.getElementById('backFromDetail').addEventListener('click', ()=> switchView('all'));
   document.getElementById('btnPrint').addEventListener('click', ()=> window.print());
 
+  // render verifier controls if pending
   const verifierSection = document.getElementById('verifierSection');
   if(r.status === 'Pending Verification'){
     verifierSection.innerHTML = `
@@ -498,7 +494,7 @@ function viewRequestDetail(id){
         <div class="mb-4">
           <p class="text-sm font-semibold">Tanda Tangan Verifikator</p>
           <div class="signature-card mt-2">
-            <canvas id="verifierSignatureCanvas" class="signature-canvas" style="height:300px;"></canvas>
+            <canvas id="verifierSignatureCanvas" class="signature-canvas"></canvas>
             <div class="flex gap-2 mt-2">
               <button id="verSigClear" class="px-3 py-1 bg-red-500 text-white rounded">Clear</button>
               <button id="verSigSave" class="px-3 py-1 bg-green-600 text-white rounded">Save Signature</button>
@@ -510,22 +506,22 @@ function viewRequestDetail(id){
           <button id="btnRejectVer" class="px-4 py-2 bg-red-600 text-white rounded">✗ Reject Request</button>
         </div>
       </div>`;
-    // init verifier canvas after DOM insertion
-    setTimeout(()=> {
+    setTimeout(()=>{
       const vCanvas = document.getElementById('verifierSignatureCanvas');
       if(vCanvas){
-        vCanvas.style.width='100%'; vCanvas.style.height='300px';
+        vCanvas.style.width='100%'; vCanvas.style.height='320px';
         fitToContainer(vCanvas);
         verifierSigPad = new SignaturePad(vCanvas, { penColor: "rgb(10,100,50)" });
-        setTimeout(()=> { try{ fitToContainer(vCanvas); }catch(e){} }, 50);
         document.getElementById('verSigClear').addEventListener('click', ()=> { verifierSigPad.clear(); vCanvas.dataset.dataurl=''; });
         document.getElementById('verSigSave').addEventListener('click', ()=> { if(!verifierSigPad || verifierSigPad.isEmpty()){ showToast('Silakan buat tanda tangan verifikator terlebih dahulu', true); return; } vCanvas.dataset.dataurl = verifierSigPad.toDataURL(); showToast('Tanda tangan verifikator disimpan'); });
+
         document.getElementById('btnVerifyConfirm').addEventListener('click', ()=> {
           const vName=document.getElementById('verifierNameInput').value.trim(), vNip=document.getElementById('verifierNIPInput').value.trim(), vSig=vCanvas.dataset.dataurl||null;
           if(!vName||!vNip){ showToast('Masukkan nama & NIP verifikator', true); return; }
           r.verifierName=vName; r.verifierNIP=vNip; r.verificationDate=(new Date()).toISOString().split('T')[0]; r.verifierSignature=vSig; r.status='Verified - Pending Approval'; r.updatedAt=new Date().toISOString();
           saveLocalRequests(); renderAllRequests(); renderVerifierDashboard(); renderSupervisorDashboard(); showToast('Request berhasil diverifikasi dan dikirim ke Penanggung Jawab'); switchView('verifier');
         });
+
         document.getElementById('btnRejectVer').addEventListener('click', ()=> {
           const reason = prompt('Masukkan alasan penolakan oleh Verifikator:'); if(!reason) return;
           const vName = document.getElementById('verifierNameInput').value.trim() || 'Verifikator';
@@ -533,9 +529,10 @@ function viewRequestDetail(id){
           saveLocalRequests(); renderAllRequests(); renderVerifierDashboard(); renderSupervisorDashboard(); showToast('Request ditolak oleh verifikator'); switchView('verifier');
         });
       }
-    }, 50);
+    },50);
   } else verifierSection.innerHTML='';
 
+  // render supervisor controls if verified
   const supSection=document.getElementById('supervisorSection');
   if(r.status === 'Verified - Pending Approval'){
     supSection.innerHTML = `
@@ -548,7 +545,7 @@ function viewRequestDetail(id){
         <div class="mb-4">
           <p class="text-sm font-semibold">Tanda Tangan Penanggung Jawab</p>
           <div class="signature-card mt-2">
-            <canvas id="supervisorSignatureCanvas" class="signature-canvas" style="height:300px;"></canvas>
+            <canvas id="supervisorSignatureCanvas" class="signature-canvas"></canvas>
             <div class="flex gap-2 mt-2">
               <button id="supSigClear" class="px-3 py-1 bg-red-500 text-white rounded">Clear</button>
               <button id="supSigSave" class="px-3 py-1 bg-green-600 text-white rounded">Save Signature</button>
@@ -560,13 +557,12 @@ function viewRequestDetail(id){
           <button id="btnRejectSup" class="px-4 py-2 bg-red-600 text-white rounded">✗ Reject Request</button>
         </div>
       </div>`;
-    setTimeout(()=> {
+    setTimeout(()=>{
       const sCanvas = document.getElementById('supervisorSignatureCanvas');
       if(sCanvas){
-        sCanvas.style.width='100%'; sCanvas.style.height='300px';
+        sCanvas.style.width='100%'; sCanvas.style.height='320px';
         fitToContainer(sCanvas);
         supervisorSigPad = new SignaturePad(sCanvas, { penColor: "rgb(0,60,0)" });
-        setTimeout(()=> { try{ fitToContainer(sCanvas); }catch(e){} }, 50);
         document.getElementById('supSigClear').addEventListener('click', ()=> { supervisorSigPad.clear(); sCanvas.dataset.dataurl=''; });
         document.getElementById('supSigSave').addEventListener('click', ()=> { if(!supervisorSigPad || supervisorSigPad.isEmpty()){ showToast('Silakan buat tanda tangan penanggung jawab terlebih dahulu', true); return; } sCanvas.dataset.dataurl = supervisorSigPad.toDataURL(); showToast('Tanda tangan penanggung jawab disimpan'); });
 
@@ -584,12 +580,13 @@ function viewRequestDetail(id){
           saveLocalRequests(); renderAllRequests(); renderVerifierDashboard(); renderSupervisorDashboard(); showToast('Request ditolak oleh penanggung jawab'); switchView('supervisor');
         });
       }
-    }, 50);
+    },50);
   } else supSection.innerHTML='';
+
   switchView('detail');
 }
 
-/* export CSV */
+/* export */
 function exportRequestsToCSV(filteredList, filename){
   const rows=[['DocumentNumber','Year','WorkUnit','Status','Requester','RequesterNIP','SubmissionDate','SubmissionLocation','Items','Verifier','VerifierNIP','VerificationDate','Supervisor','SupervisorNIP','SupervisorApprovalDate','CreatedAt','UpdatedAt']];
   filteredList.forEach(r=>{
@@ -600,15 +597,16 @@ function exportRequestsToCSV(filteredList, filename){
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' }); const url = URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=filename||'requests.csv'; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
 }
 
-/* switch view & settings apply */
+/* switch and settings */
 function switchView(name){
-  [viewForm, viewAll, viewVerifier, viewSupervisor, viewSettings, viewDetail].forEach(v=>v.classList.add('hidden'));
-  if(name==='form') viewForm.classList.remove('hidden');
-  else if(name==='all'){ viewAll.classList.remove('hidden'); renderAllRequests(); }
-  else if(name==='verifier'){ viewVerifier.classList.remove('hidden'); renderVerifierDashboard(); }
-  else if(name==='supervisor'){ viewSupervisor.classList.remove('hidden'); renderSupervisorDashboard(); }
-  else if(name==='settings'){ viewSettings.classList.remove('hidden'); loadSettingsForm(); }
-  else if(name==='detail'){ viewDetail.classList.remove('hidden'); }
+  const views = ['viewForm','viewAll','viewVerifier','viewSupervisor','viewSettings','viewDetail'];
+  views.forEach(id=> document.getElementById(id).classList.add('hidden'));
+  if(name==='form') document.getElementById('viewForm').classList.remove('hidden');
+  else if(name==='all'){ document.getElementById('viewAll').classList.remove('hidden'); renderAllRequests(); }
+  else if(name==='verifier'){ document.getElementById('viewVerifier').classList.remove('hidden'); renderVerifierDashboard(); }
+  else if(name==='supervisor'){ document.getElementById('viewSupervisor').classList.remove('hidden'); renderSupervisorDashboard(); }
+  else if(name==='settings'){ document.getElementById('viewSettings').classList.remove('hidden'); loadSettingsForm(); }
+  else if(name==='detail') document.getElementById('viewDetail').classList.remove('hidden');
 }
 
 function loadSettingsForm(){
@@ -634,7 +632,8 @@ function applySettingsToUI(){
 function init(){
   initYearDropdowns();
   document.getElementById('submissionDate').value = (new Date()).toISOString().split('T')[0];
-  addItemRow(); initRequestSignature();
+  addItemRow();
+  initRequestSignature();
 
   document.getElementById('btnNew').addEventListener('click', ()=> switchView('form'));
   document.getElementById('btnAll').addEventListener('click', ()=> switchView('all'));
@@ -680,13 +679,9 @@ function init(){
 
   document.getElementById('btnExportAll').addEventListener('click', ()=> exportRequestsToCSV(currentRequests.filter(r=>r.recordType==='request'), `requests_all.csv`));
 
-  // live preview of format in settings
-  document.getElementById('settingDocFormat').addEventListener('input', (e)=> {
-    const v = e.target.value.trim(); appSettings.doc_format = v; buildDocFormatPreview(); updateDocumentNumber();
-  });
+  document.getElementById('settingDocFormat').addEventListener('input', (e)=> { const v = e.target.value.trim(); appSettings.doc_format = v; buildDocFormatPreview(); updateDocumentNumber(); });
   document.getElementById('settingDocPrefix').addEventListener('input', (e)=> { appSettings.doc_prefix = e.target.value.trim(); buildDocFormatPreview(); updateDocumentNumber(); });
 
-  // update number when submission date or year changes
   document.getElementById('submissionDate').addEventListener('change', updateDocumentNumber);
   document.getElementById('yearSelect').addEventListener('change', updateDocumentNumber);
 
@@ -695,7 +690,7 @@ function init(){
 
 init(); switchView('form');
 
-/* expose for html onclick */
+/* expose */
 window.viewRequestDetail = viewRequestDetail;
 window.deleteRequest = deleteRequest;
 window.openWhatsAppFor = openWhatsAppFor;
