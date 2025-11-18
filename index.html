@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Form Permintaan ATK - BPS</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Signature Pad -->
   <script src="https://cdn.jsdelivr.net/npm/signature_pad@4.0.0/dist/signature_pad.umd.min.js"></script>
   <style>
     body { box-sizing: border-box; }
@@ -13,7 +14,7 @@
     .print-section { page-break-inside: avoid; }
     @media print { .no-print { display: none !important; } body { background: white !important; margin: 0; padding: 12px; } }
     .signature-card { border: 1px dashed #c7d2fe; border-radius: 8px; padding: 8px; background: #fafafa; }
-    canvas.signature-canvas { width: 100%; height: 200px; touch-action: none; border-radius: 6px; background: white; border: 1px solid #e5e7eb; }
+    canvas.signature-canvas { width: 100% !important; height: 300px !important; touch-action: none; border-radius: 6px; background: white; border: 1px solid #e5e7eb; }
   </style>
 </head>
 <body class="bg-gray-50 min-h-screen text-gray-800">
@@ -94,9 +95,10 @@
                   <button id="reqSigSave" class="px-3 py-1 bg-green-600 text-white rounded">Save Signature</button>
                 </div>
               </div>
+              <p class="text-xs text-gray-600 mt-2">ℹ️ Petunjuk: Tanda tangan gunakan mouse atau sentuh. Setelah disimpan, tanda tangan akan tercantum pada dokumen.</p>
             </div>
             <div class="flex-1 text-sm text-gray-700">
-              <p><strong>ℹ️ Petunjuk:</strong> Tanda tangan menggunakan mouse atau sentuh pada area di kiri. Setelah disimpan, tanda tangan akan tercantum pada dokumen.</p>
+              <!-- tambahan instruksi jika perlu -->
             </div>
           </div>
         </div>
@@ -165,7 +167,7 @@
       <div class="mb-4">
         <label class="text-sm">Document Number Format</label>
         <input id="settingDocFormat" class="mt-2 w-full px-3 py-2 border rounded" placeholder="{AUTO}/ATK/{MM}/{YYYY}">
-        <p class="text-xs text-gray-500 mt-1">Gunakan placeholder {AUTO}, {MM}, {YYYY}. Contoh default: <code>{AUTO}/ATK/{MM}/{YYYY}</code></p>
+        <p class="text-xs text-gray-500 mt-1">Gunakan placeholder <code>{AUTO}</code>, <code>{MM}</code>, <code>{YYYY}</code>. Contoh default: <code>{AUTO}/ATK/{MM}/{YYYY}</code></p>
         <div class="mt-2">
           <strong>Preview:</strong> <span id="docFormatPreview" class="font-mono"></span>
         </div>
@@ -248,7 +250,6 @@ function initYearDropdowns(){
 /* build preview example for doc format */
 function buildDocFormatPreview(){
   const fmt = appSettings.doc_format || "{AUTO}/ATK/{MM}/{YYYY}";
-  // use example values
   const sampleDate = new Date();
   const mm = ("0"+(sampleDate.getMonth()+1)).slice(-2);
   const yyyy = sampleDate.getFullYear();
@@ -264,11 +265,9 @@ function generateDocumentNumber(){
   const date = document.getElementById('submissionDate').value || (new Date()).toISOString().split('T')[0];
   const month = ("0"+(new Date(date).getMonth()+1)).slice(-2);
 
-  // find existing highest auto number for this month/year using parsing of stored documentNumber by extracting first numeric group
   const existingNumbers = currentRequests
     .filter(r=> r.recordType==='request' && r.documentNumber)
     .map(r=>{
-      // try to extract first numeric group from documentNumber (assume format like ####/...)
       const first = (r.documentNumber.split('/')[0]||'').replace(/\D/g,'');
       return parseInt(first,10) || 0;
     })
@@ -278,10 +277,20 @@ function generateDocumentNumber(){
   const nextNumber = existingNumbers.length ? Math.max(...existingNumbers)+1 : prefixNum;
   const paddedAuto = (""+nextNumber).padStart(4,'0');
 
-  // build from format
   const fmt = appSettings.doc_format || "{AUTO}/ATK/{MM}/{YYYY}";
   const result = fmt.replace(/\{AUTO\}/g, paddedAuto).replace(/\{MM\}/g, month).replace(/\{YYYY\}/g, year);
   return result;
+}
+
+/* UPDATE document number input */
+function updateDocumentNumber(){
+  try{
+    const docInput = document.getElementById('documentNumber');
+    if(!docInput) return;
+    docInput.value = generateDocumentNumber();
+  }catch(e){
+    console.error('updateDocumentNumber error', e);
+  }
 }
 
 /* items table */
@@ -291,9 +300,7 @@ function getItemsFromTable(){ const rows=Array.from(document.getElementById('ite
 
 /* signature helpers */
 function fitToContainer(canvas){ const ratio=Math.max(window.devicePixelRatio||1,1); const w=canvas.offsetWidth; const h=canvas.offsetHeight; canvas.width=Math.floor(w*ratio); canvas.height=Math.floor(h*ratio); const ctx=canvas.getContext('2d'); ctx.scale(ratio, ratio); }
-function initRequestSignature(){ const canvas=document.getElementById('requesterSignatureCanvas'); fitToContainer(canvas); requesterSigPad = new SignaturePad(canvas, { penColor: "rgb(0,80,160)" }); window.addEventListener('resize', ()=>{ fitToContainer(canvas); }); }
-function clearRequesterSig(){ if(requesterSigPad) requesterSigPad.clear(); }
-function saveRequesterSig(){ const canvas=document.getElementById('requesterSignatureCanvas'); if(!requesterSigPad || requesterSigPad.isEmpty()){ showToast('Silakan buat tanda tangan terlebih dahulu', true); return; } canvas.dataset.dataurl = requesterSigPad.toDataURL(); showToast('Tanda tangan pemohon disimpan'); }
+function initRequestSignature(){ const canvas=document.getElementById('requesterSignatureCanvas'); if(!canvas) return; fitToContainer(canvas); requesterSigPad = new SignaturePad(canvas, { penColor: "rgb(0,80,160)" }); window.addEventListener('resize', ()=>{ try{ fitToContainer(canvas); }catch(e){} }); }
 
 /* rendering helpers */
 function getStatusColorClass(status){ switch(status){ case 'Pending Verification': return 'bg-yellow-200 text-yellow-800'; case 'Verified - Pending Approval': return 'bg-blue-200 text-blue-800'; case 'Fully Approved': return 'bg-green-200 text-green-800'; case 'Rejected by Verifier': case 'Rejected by Supervisor': return 'bg-red-200 text-red-800'; default: return 'bg-gray-200 text-gray-800'; } }
@@ -347,6 +354,7 @@ function renderSupervisorDashboard(){
 function createId(){ return 'r-'+Math.random().toString(36).slice(2,9); }
 
 function submitRequest(){
+  updateDocumentNumber();
   const year = yearSelect.value;
   const workUnit = document.getElementById('workUnitSelect').value;
   const items = getItemsFromTable();
@@ -356,7 +364,7 @@ function submitRequest(){
   if(items.length===0){ showToast('Mohon tambahkan minimal 1 item', true); return; }
   if(!requesterName || !requesterNIP){ showToast('Mohon isi nama dan NIP pemohon', true); return; }
 
-  const docNumber = generateDocumentNumber();
+  const docNumber = document.getElementById('documentNumber').value || generateDocumentNumber();
   const submissionDate = document.getElementById('submissionDate').value || (new Date()).toISOString().split('T')[0];
   const submissionLocation = document.getElementById('submissionLocation').value || '';
   const reqCanvas = document.getElementById('requesterSignatureCanvas');
@@ -389,8 +397,7 @@ function resetForm(){
   document.getElementById('requesterNIP').value='';
   document.getElementById('submissionDate').value=(new Date()).toISOString().split('T')[0];
   document.getElementById('submissionLocation').value='Jakarta';
-  clearRequesterSig();
-  const canvas=document.getElementById('requesterSignatureCanvas'); if(canvas) canvas.dataset.dataurl='';
+  const canvas=document.getElementById('requesterSignatureCanvas'); if(canvas){ const ctx=canvas.getContext('2d'); ctx.clearRect(0,0,canvas.width,canvas.height); canvas.dataset.dataurl=''; if(requesterSigPad) requesterSigPad.clear(); }
 }
 
 function deleteRequest(id, event){ if(event) event.stopPropagation(); const idx=currentRequests.findIndex(r=>r.__id===id); if(idx===-1){ showToast('Permintaan tidak ditemukan', true); return; } if(!confirm('Yakin ingin menghapus permintaan ini?')) return; currentRequests.splice(idx,1); saveLocalRequests(); renderAllRequests(); renderVerifierDashboard(); renderSupervisorDashboard(); showToast('Permintaan berhasil dihapus'); }
@@ -491,7 +498,7 @@ function viewRequestDetail(id){
         <div class="mb-4">
           <p class="text-sm font-semibold">Tanda Tangan Verifikator</p>
           <div class="signature-card mt-2">
-            <canvas id="verifierSignatureCanvas" class="signature-canvas" style="height:200px;"></canvas>
+            <canvas id="verifierSignatureCanvas" class="signature-canvas" style="height:300px;"></canvas>
             <div class="flex gap-2 mt-2">
               <button id="verSigClear" class="px-3 py-1 bg-red-500 text-white rounded">Clear</button>
               <button id="verSigSave" class="px-3 py-1 bg-green-600 text-white rounded">Save Signature</button>
@@ -503,23 +510,30 @@ function viewRequestDetail(id){
           <button id="btnRejectVer" class="px-4 py-2 bg-red-600 text-white rounded">✗ Reject Request</button>
         </div>
       </div>`;
-    const vCanvas = document.getElementById('verifierSignatureCanvas'); fitToContainer(vCanvas); verifierSigPad = new SignaturePad(vCanvas, { penColor: "rgb(10,100,50)" });
-    document.getElementById('verSigClear').addEventListener('click', ()=> verifierSigPad.clear());
-    document.getElementById('verSigSave').addEventListener('click', ()=> { if(!verifierSigPad || verifierSigPad.isEmpty()){ showToast('Silakan buat tanda tangan verifikator terlebih dahulu', true); return; } vCanvas.dataset.dataurl = verifierSigPad.toDataURL(); showToast('Tanda tangan verifikator disimpan'); });
-
-    document.getElementById('btnVerifyConfirm').addEventListener('click', ()=>{
-      const vName=document.getElementById('verifierNameInput').value.trim(), vNip=document.getElementById('verifierNIPInput').value.trim(), vSig=vCanvas.dataset.dataurl||null;
-      if(!vName||!vNip){ showToast('Masukkan nama & NIP verifikator', true); return; }
-      r.verifierName=vName; r.verifierNIP=vNip; r.verificationDate=(new Date()).toISOString().split('T')[0]; r.verifierSignature=vSig; r.status='Verified - Pending Approval'; r.updatedAt=new Date().toISOString();
-      saveLocalRequests(); renderAllRequests(); renderVerifierDashboard(); renderSupervisorDashboard(); showToast('Request berhasil diverifikasi dan dikirim ke Penanggung Jawab'); switchView('verifier');
-    });
-
-    document.getElementById('btnRejectVer').addEventListener('click', ()=> {
-      const reason = prompt('Masukkan alasan penolakan oleh Verifikator:'); if(!reason) return;
-      const vName = document.getElementById('verifierNameInput').value.trim() || 'Verifikator';
-      r.status='Rejected by Verifier'; r.rejectionReason=reason; r.rejectedBy='Verifikator'; r.verifierName=vName; r.verifierNIP=document.getElementById('verifierNIPInput').value.trim(); r.updatedAt=new Date().toISOString();
-      saveLocalRequests(); renderAllRequests(); renderVerifierDashboard(); renderSupervisorDashboard(); showToast('Request ditolak oleh verifikator'); switchView('verifier');
-    });
+    // init verifier canvas after DOM insertion
+    setTimeout(()=> {
+      const vCanvas = document.getElementById('verifierSignatureCanvas');
+      if(vCanvas){
+        vCanvas.style.width='100%'; vCanvas.style.height='300px';
+        fitToContainer(vCanvas);
+        verifierSigPad = new SignaturePad(vCanvas, { penColor: "rgb(10,100,50)" });
+        setTimeout(()=> { try{ fitToContainer(vCanvas); }catch(e){} }, 50);
+        document.getElementById('verSigClear').addEventListener('click', ()=> { verifierSigPad.clear(); vCanvas.dataset.dataurl=''; });
+        document.getElementById('verSigSave').addEventListener('click', ()=> { if(!verifierSigPad || verifierSigPad.isEmpty()){ showToast('Silakan buat tanda tangan verifikator terlebih dahulu', true); return; } vCanvas.dataset.dataurl = verifierSigPad.toDataURL(); showToast('Tanda tangan verifikator disimpan'); });
+        document.getElementById('btnVerifyConfirm').addEventListener('click', ()=> {
+          const vName=document.getElementById('verifierNameInput').value.trim(), vNip=document.getElementById('verifierNIPInput').value.trim(), vSig=vCanvas.dataset.dataurl||null;
+          if(!vName||!vNip){ showToast('Masukkan nama & NIP verifikator', true); return; }
+          r.verifierName=vName; r.verifierNIP=vNip; r.verificationDate=(new Date()).toISOString().split('T')[0]; r.verifierSignature=vSig; r.status='Verified - Pending Approval'; r.updatedAt=new Date().toISOString();
+          saveLocalRequests(); renderAllRequests(); renderVerifierDashboard(); renderSupervisorDashboard(); showToast('Request berhasil diverifikasi dan dikirim ke Penanggung Jawab'); switchView('verifier');
+        });
+        document.getElementById('btnRejectVer').addEventListener('click', ()=> {
+          const reason = prompt('Masukkan alasan penolakan oleh Verifikator:'); if(!reason) return;
+          const vName = document.getElementById('verifierNameInput').value.trim() || 'Verifikator';
+          r.status='Rejected by Verifier'; r.rejectionReason=reason; r.rejectedBy='Verifikator'; r.verifierName=vName; r.verifierNIP=document.getElementById('verifierNIPInput').value.trim(); r.updatedAt=new Date().toISOString();
+          saveLocalRequests(); renderAllRequests(); renderVerifierDashboard(); renderSupervisorDashboard(); showToast('Request ditolak oleh verifikator'); switchView('verifier');
+        });
+      }
+    }, 50);
   } else verifierSection.innerHTML='';
 
   const supSection=document.getElementById('supervisorSection');
@@ -534,7 +548,7 @@ function viewRequestDetail(id){
         <div class="mb-4">
           <p class="text-sm font-semibold">Tanda Tangan Penanggung Jawab</p>
           <div class="signature-card mt-2">
-            <canvas id="supervisorSignatureCanvas" class="signature-canvas" style="height:200px;"></canvas>
+            <canvas id="supervisorSignatureCanvas" class="signature-canvas" style="height:300px;"></canvas>
             <div class="flex gap-2 mt-2">
               <button id="supSigClear" class="px-3 py-1 bg-red-500 text-white rounded">Clear</button>
               <button id="supSigSave" class="px-3 py-1 bg-green-600 text-white rounded">Save Signature</button>
@@ -546,23 +560,31 @@ function viewRequestDetail(id){
           <button id="btnRejectSup" class="px-4 py-2 bg-red-600 text-white rounded">✗ Reject Request</button>
         </div>
       </div>`;
-    const sCanvas = document.getElementById('supervisorSignatureCanvas'); fitToContainer(sCanvas); supervisorSigPad = new SignaturePad(sCanvas, { penColor: "rgb(0,60,0)" });
-    document.getElementById('supSigClear').addEventListener('click', ()=> supervisorSigPad.clear());
-    document.getElementById('supSigSave').addEventListener('click', ()=> { if(!supervisorSigPad || supervisorSigPad.isEmpty()){ showToast('Silakan buat tanda tangan penanggung jawab terlebih dahulu', true); return; } sCanvas.dataset.dataurl = supervisorSigPad.toDataURL(); showToast('Tanda tangan penanggung jawab disimpan'); });
+    setTimeout(()=> {
+      const sCanvas = document.getElementById('supervisorSignatureCanvas');
+      if(sCanvas){
+        sCanvas.style.width='100%'; sCanvas.style.height='300px';
+        fitToContainer(sCanvas);
+        supervisorSigPad = new SignaturePad(sCanvas, { penColor: "rgb(0,60,0)" });
+        setTimeout(()=> { try{ fitToContainer(sCanvas); }catch(e){} }, 50);
+        document.getElementById('supSigClear').addEventListener('click', ()=> { supervisorSigPad.clear(); sCanvas.dataset.dataurl=''; });
+        document.getElementById('supSigSave').addEventListener('click', ()=> { if(!supervisorSigPad || supervisorSigPad.isEmpty()){ showToast('Silakan buat tanda tangan penanggung jawab terlebih dahulu', true); return; } sCanvas.dataset.dataurl = supervisorSigPad.toDataURL(); showToast('Tanda tangan penanggung jawab disimpan'); });
 
-    document.getElementById('btnApproveFinal').addEventListener('click', ()=> {
-      const sName=document.getElementById('supervisorNameInput').value.trim(), sNip=document.getElementById('supervisorNIPInput').value.trim(), sSig=sCanvas.dataset.dataurl||null;
-      if(!sName||!sNip){ showToast('Masukkan nama & NIP penanggung jawab', true); return; }
-      r.supervisorName=sName; r.supervisorNIP=sNip; r.supervisorSignature=sSig; r.supervisorApprovalDate=(new Date()).toISOString().split('T')[0]; r.status='Fully Approved'; r.updatedAt=new Date().toISOString();
-      saveLocalRequests(); renderAllRequests(); renderVerifierDashboard(); renderSupervisorDashboard(); showToast('Request telah disetujui penuh'); switchView('supervisor');
-    });
+        document.getElementById('btnApproveFinal').addEventListener('click', ()=> {
+          const sName=document.getElementById('supervisorNameInput').value.trim(), sNip=document.getElementById('supervisorNIPInput').value.trim(), sSig=sCanvas.dataset.dataurl||null;
+          if(!sName||!sNip){ showToast('Masukkan nama & NIP penanggung jawab', true); return; }
+          r.supervisorName=sName; r.supervisorNIP=sNip; r.supervisorSignature=sSig; r.supervisorApprovalDate=(new Date()).toISOString().split('T')[0]; r.status='Fully Approved'; r.updatedAt=new Date().toISOString();
+          saveLocalRequests(); renderAllRequests(); renderVerifierDashboard(); renderSupervisorDashboard(); showToast('Request telah disetujui penuh'); switchView('supervisor');
+        });
 
-    document.getElementById('btnRejectSup').addEventListener('click', ()=> {
-      const reason = prompt('Masukkan alasan penolakan oleh Penanggung Jawab:'); if(!reason) return;
-      const sName=document.getElementById('supervisorNameInput').value.trim()||'Penanggung Jawab';
-      r.status='Rejected by Supervisor'; r.rejectionReason=reason; r.rejectedBy='Penanggung Jawab'; r.supervisorName=sName; r.supervisorNIP=document.getElementById('supervisorNIPInput').value.trim(); r.updatedAt=new Date().toISOString();
-      saveLocalRequests(); renderAllRequests(); renderVerifierDashboard(); renderSupervisorDashboard(); showToast('Request ditolak oleh penanggung jawab'); switchView('supervisor');
-    });
+        document.getElementById('btnRejectSup').addEventListener('click', ()=> {
+          const reason = prompt('Masukkan alasan penolakan oleh Penanggung Jawab:'); if(!reason) return;
+          const sName=document.getElementById('supervisorNameInput').value.trim()||'Penanggung Jawab';
+          r.status='Rejected by Supervisor'; r.rejectionReason=reason; r.rejectedBy='Penanggung Jawab'; r.supervisorName=sName; r.supervisorNIP=document.getElementById('supervisorNIPInput').value.trim(); r.updatedAt=new Date().toISOString();
+          saveLocalRequests(); renderAllRequests(); renderVerifierDashboard(); renderSupervisorDashboard(); showToast('Request ditolak oleh penanggung jawab'); switchView('supervisor');
+        });
+      }
+    }, 50);
   } else supSection.innerHTML='';
   switchView('detail');
 }
@@ -621,8 +643,8 @@ function init(){
   document.getElementById('btnSettings').addEventListener('click', ()=> switchView('settings'));
 
   document.getElementById('btnAddItem').addEventListener('click', ()=> addItemRow());
-  document.getElementById('reqSigClear').addEventListener('click', ()=> clearRequesterSig());
-  document.getElementById('reqSigSave').addEventListener('click', ()=> saveRequesterSig());
+  document.getElementById('reqSigClear').addEventListener('click', ()=> { if(requesterSigPad) requesterSigPad.clear(); const c=document.getElementById('requesterSignatureCanvas'); if(c) c.dataset.dataurl=''; });
+  document.getElementById('reqSigSave').addEventListener('click', ()=> { const c=document.getElementById('requesterSignatureCanvas'); if(!requesterSigPad || requesterSigPad.isEmpty()){ showToast('Silakan buat tanda tangan pemohon terlebih dahulu', true); return; } c.dataset.dataurl = requesterSigPad.toDataURL(); showToast('Tanda tangan pemohon disimpan'); });
   document.getElementById('submitRequestBtn').addEventListener('click', submitRequest);
 
   document.getElementById('saveSettingsBtn').addEventListener('click', ()=>{
@@ -636,9 +658,9 @@ function init(){
     if(!f||!y||!o){ showToast('Mohon isi semua pengaturan utama', true); return; }
     appSettings.form_title=f; appSettings.budget_year=y; appSettings.organization_name=o; appSettings.logo_url=logo;
     appSettings.doc_prefix = prefix || appSettings.doc_prefix || '0001';
-    appSettings.doc_format = format || appSettings.doc_format || '{AUTO}/ATK/{MM}/{YYYY}'; 
+    appSettings.doc_format = format || appSettings.doc_format || '{AUTO}/ATK/{MM}/{YYYY}';
     appSettings.whatsapp_number = wa || '';
-    saveSettingsToStorage(); applySettingsToUI(); showToast('Settings disimpan'); switchView('form');
+    saveSettingsToStorage(); applySettingsToUI(); updateDocumentNumber(); showToast('Settings disimpan'); switchView('form');
   });
   document.getElementById('cancelSettingsBtn').addEventListener('click', ()=> switchView('form'));
 
@@ -660,11 +682,15 @@ function init(){
 
   // live preview of format in settings
   document.getElementById('settingDocFormat').addEventListener('input', (e)=> {
-    const v = e.target.value.trim(); appSettings.doc_format = v; buildDocFormatPreview();
+    const v = e.target.value.trim(); appSettings.doc_format = v; buildDocFormatPreview(); updateDocumentNumber();
   });
-  document.getElementById('settingDocPrefix').addEventListener('input', (e)=> { appSettings.doc_prefix = e.target.value.trim(); buildDocFormatPreview(); });
+  document.getElementById('settingDocPrefix').addEventListener('input', (e)=> { appSettings.doc_prefix = e.target.value.trim(); buildDocFormatPreview(); updateDocumentNumber(); });
 
-  applySettingsToUI(); renderAllRequests(); renderVerifierDashboard(); renderSupervisorDashboard();
+  // update number when submission date or year changes
+  document.getElementById('submissionDate').addEventListener('change', updateDocumentNumber);
+  document.getElementById('yearSelect').addEventListener('change', updateDocumentNumber);
+
+  applySettingsToUI(); updateDocumentNumber(); renderAllRequests(); renderVerifierDashboard(); renderSupervisorDashboard();
 }
 
 init(); switchView('form');
