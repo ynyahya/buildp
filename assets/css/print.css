@@ -1,0 +1,72 @@
+@media print { 
+  .no-print { 
+    display: none !important; 
+  } 
+
+  body { 
+    background: white !important; 
+    margin: 0; 
+    padding: 12px; 
+  }
+
+  .print-section { 
+    page-break-inside: avoid; 
+    box-shadow: none !important; 
+  }
+
+  #app { 
+    max-width: 100% !important; 
+    padding: 0 !important; 
+    margin: 0 !important; 
+  }
+
+  #viewDetail, #viewForm { 
+    box-shadow: none !important; 
+    border: none !important; 
+    padding: 0 12px !important; 
+  }
+
+  table { 
+    page-break-inside: auto; 
+    width: 100% !important; 
+  }
+
+  tr { 
+    page-break-inside: avoid; 
+    page-break-after: auto; 
+  }
+
+  .digital-signature { 
+    border: 2px solid #10b981 !important; 
+    background: #f0fdf4 !important; 
+    print-color-adjust: exact; 
+    -webkit-print-color-adjust: exact; 
+    page-break-inside: avoid; 
+  }
+
+  .sig-img { 
+    max-width: 160px !important; 
+    width: 100% !important; 
+    height: auto !important; 
+    max-height: 90px !important; 
+    display: block; 
+    margin-left: auto; 
+    margin-right: auto;
+  }
+
+  #goodsReleaseSection { 
+    page-break-inside: avoid; 
+    break-inside: avoid; 
+    -webkit-column-break-inside: avoid; 
+  }
+
+  #goodsReleaseSection .grid { 
+    page-break-inside: avoid; 
+    break-inside: avoid; 
+  }
+
+  #logoContainer img { 
+    width: 96px !important; 
+    height: auto !important; 
+  }
+}

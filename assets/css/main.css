@@ -1,0 +1,55 @@
+body { 
+  box-sizing: border-box; 
+}
+
+.toast { 
+  position: fixed; 
+  top: 20px; 
+  right: 20px; 
+  background: #10b981; 
+  color: white; 
+  padding: 12px 18px; 
+  border-radius: 8px; 
+  z-index: 1200; 
+  box-shadow: 0 6px 18px rgba(0,0,0,0.08); 
+}
+
+.toast.error { 
+  background: #ef4444; 
+}
+
+.signature-card { 
+  border: 1px dashed #c7d2fe; 
+  border-radius: 8px; 
+  padding: 8px; 
+  background: #fafafa; 
+}
+
+canvas.signature-canvas { 
+  width: 100% !important; 
+  height: 300px !important; 
+  touch-action: none; 
+  border-radius: 6px; 
+  background: white; 
+  border: 1px solid #e5e7eb; 
+}
+
+.digital-signature { 
+  border: 2px solid #10b981; 
+  background: #f0fdf4; 
+  padding: 12px; 
+  border-radius: 8px; 
+  font-family: 'Courier New', monospace; 
+}
+
+.sig-img { 
+  max-width: 160px; 
+  width: 100%; 
+  height: auto; 
+  display: block; 
+  margin: 0 auto; 
+  border: 1px solid #e5e7eb; 
+  border-radius: 6px; 
+  background: white; 
+  padding: 4px; 
+}
