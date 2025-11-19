@@ -38,13 +38,17 @@
 <body class="bg-gray-50 min-h-screen text-gray-800">
   <div id="app" class="max-w-6xl mx-auto p-6">
 
-    <div class="no-print flex gap-3 mb-6">
-      <button id="btnNew" class="px-4 py-2 bg-blue-600 text-white rounded shadow-sm">📝 Permintaan Baru</button>
-      <button id="btnAll" class="px-4 py-2 bg-gray-700 text-white rounded shadow-sm">📋 Semua Permintaan</button>
-      <button id="btnVerifier" class="px-4 py-2 bg-orange-600 text-white rounded shadow-sm">✅ Verifikator</button>
-      <button id="btnSupervisor" class="px-4 py-2 bg-purple-600 text-white rounded shadow-sm">👔 Penanggung Jawab</button>
-      <button id="btnSettings" class="px-4 py-2 bg-gray-800 text-white rounded shadow-sm">⚙️ Pengaturan</button>
-    </div>
+  <!-- Responsive top menu: wrap, center on small screens, horizontal on larger screens -->
+<div class="no-print mb-6">
+  <div class="flex flex-wrap items-center gap-3 justify-center sm:justify-start">
+    <button id="btnNew" class="w-full sm:w-auto px-4 py-2 bg-blue-600 text-white rounded shadow-sm">📝 Permintaan Baru</button>
+    <button id="btnAll" class="w-full sm:w-auto px-4 py-2 bg-gray-700 text-white rounded shadow-sm">📋 Semua Permintaan</button>
+    <button id="btnVerifier" class="w-full sm:w-auto px-4 py-2 bg-orange-600 text-white rounded shadow-sm">✅ Verifikator</button>
+    <button id="btnSupervisor" class="w-full sm:w-auto px-4 py-2 bg-purple-600 text-white rounded shadow-sm">👔 Penanggung Jawab</button>
+    <button id="btnSettings" class="w-full sm:w-auto px-4 py-2 bg-gray-800 text-white rounded shadow-sm">⚙️ Pengaturan</button>
+  </div>
+</div>
+
 
     <!-- Form view -->
     <div id="viewForm" class="bg-white rounded shadow p-6 print-section">
