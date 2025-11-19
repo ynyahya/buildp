@@ -305,49 +305,147 @@ function initRequestSignature(){ const canvas=document.getElementById('requester
 /* rendering helpers */
 function getStatusColorClass(status){ switch(status){ case 'Pending Verification': return 'bg-yellow-200 text-yellow-800'; case 'Verified - Pending Approval': return 'bg-blue-200 text-blue-800'; case 'Fully Approved': return 'bg-green-200 text-green-800'; case 'Rejected by Verifier': case 'Rejected by Supervisor': return 'bg-red-200 text-red-800'; default: return 'bg-gray-200 text-gray-800'; } }
 
+/* NEW: programmatic renderAllRequests to avoid click issues */
 function renderAllRequests(){
-  const container=document.getElementById('allRequestsList');
-  const monthFilter=document.getElementById('filterMonth').value;
-  const yearFilterVal=document.getElementById('filterYear').value;
-  const list=currentRequests.filter(r=>r.recordType==='request').filter(r=>{
-    if(!monthFilter && !yearFilterVal) return true;
-    const parts=(r.documentNumber||'').split('/');
-    const m=parts[2]||''; const y=parts[3]||'';
-    if(monthFilter && yearFilterVal) return m===monthFilter && y===yearFilterVal;
-    if(monthFilter) return m===monthFilter;
-    if(yearFilterVal) return y===yearFilterVal;
-    return true;
-  }).sort((a,b)=> new Date(b.createdAt)-new Date(a.createdAt));
-  if(list.length===0){ container.innerHTML='<p class="text-gray-500 py-8 text-center">Belum ada permintaan</p>'; return; }
-  container.innerHTML = list.map(r=>{
-    const statusBadge = `<span class="px-3 py-1 rounded-full text-sm ${getStatusColorClass(r.status)}">${escapeHtml(r.status)}</span>`;
-    return `<div class="border rounded p-4 shadow-sm flex justify-between items-start">
-      <div onclick="viewRequestDetail('${r.__id}')" class="cursor-pointer">
-        <h3 class="font-bold">${escapeHtml(r.documentNumber)}</h3>
-        <p class="text-sm text-gray-600">${escapeHtml(r.workUnit)} - ${escapeHtml(r.year)}</p>
-        <p class="text-sm text-gray-600 mt-2"><strong>Requester:</strong> ${escapeHtml(r.requesterName)} (${escapeHtml(r.requesterNIP)})</p>
-        <p class="text-sm text-gray-600"><strong>Date:</strong> ${formatDate(r.submissionDate)}</p>
-      </div>
-      <div class="flex items-center gap-2">
-        ${statusBadge}
-        <button onclick="openWhatsAppFor('${r.__id}')" class="px-3 py-1 bg-green-500 text-white rounded">📱 Buka WA</button>
-        <button onclick="deleteRequest('${r.__id}', event)" class="px-3 py-1 bg-red-500 text-white rounded">🗑️ Hapus</button>
-      </div>
-    </div>`; }).join('');
+  const container = document.getElementById('allRequestsList');
+  const monthFilter = document.getElementById('filterMonth').value;
+  const yearFilterVal = document.getElementById('filterYear').value;
+
+  const list = currentRequests
+    .filter(r => r.recordType === 'request')
+    .filter(r => {
+      if(!monthFilter && !yearFilterVal) return true;
+      const parts = (r.documentNumber||'').split('/');
+      const m = parts[2]||''; const y = parts[3]||'';
+      if(monthFilter && yearFilterVal) return m===monthFilter && y===yearFilterVal;
+      if(monthFilter) return m===monthFilter;
+      if(yearFilterVal) return y===yearFilterVal;
+      return true;
+    })
+    .sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+  container.innerHTML = '';
+  if(list.length === 0){
+    container.innerHTML = '<p class="text-gray-500 py-8 text-center">Belum ada permintaan</p>';
+    return;
+  }
+
+  list.forEach(r => {
+    const card = document.createElement('div');
+    card.className = 'border rounded p-4 shadow-sm flex justify-between items-start';
+
+    // left clickable area
+    const left = document.createElement('div');
+    left.className = 'cursor-pointer flex-1';
+    left.style.minWidth = '0';
+    left.addEventListener('click', () => viewRequestDetail(r.__id));
+
+    const h3 = document.createElement('h3');
+    h3.className = 'font-bold';
+    h3.textContent = r.documentNumber || '-';
+
+    const p1 = document.createElement('p');
+    p1.className = 'text-sm text-gray-600';
+    p1.textContent = `${r.workUnit || '-'} - ${r.year || '-'}`;
+
+    const p2 = document.createElement('p');
+    p2.className = 'text-sm text-gray-600 mt-2';
+    p2.innerHTML = `<strong>Requester:</strong> ${escapeHtml(r.requesterName)} (${escapeHtml(r.requesterNIP)})`;
+
+    const p3 = document.createElement('p');
+    p3.className = 'text-sm text-gray-600';
+    p3.innerHTML = `<strong>Date:</strong> ${formatDate(r.submissionDate)}`;
+
+    left.appendChild(h3);
+    left.appendChild(p1);
+    left.appendChild(p2);
+    left.appendChild(p3);
+
+    // right actions
+    const right = document.createElement('div');
+    right.className = 'flex items-center gap-2';
+
+    const statusBadge = document.createElement('span');
+    statusBadge.className = `px-3 py-1 rounded-full text-sm ${getStatusColorClass(r.status)}`;
+    statusBadge.textContent = r.status || '-';
+
+    const waBtn = document.createElement('button');
+    waBtn.className = 'px-3 py-1 bg-green-500 text-white rounded';
+    waBtn.textContent = '📱 Buka WA';
+    waBtn.addEventListener('click', (ev) => { ev.stopPropagation(); openWhatsAppFor(r.__id); });
+
+    const delBtn = document.createElement('button');
+    delBtn.className = 'px-3 py-1 bg-red-500 text-white rounded';
+    delBtn.textContent = '🗑️ Hapus';
+    delBtn.addEventListener('click', (ev) => { ev.stopPropagation(); deleteRequest(r.__id, ev); });
+
+    right.appendChild(statusBadge);
+    right.appendChild(waBtn);
+    right.appendChild(delBtn);
+
+    card.appendChild(left);
+    card.appendChild(right);
+
+    container.appendChild(card);
+  });
 }
 
+/* programmatic verifier dashboard */
 function renderVerifierDashboard(){
-  const container=document.getElementById('verifierRequestsList');
+  const container = document.getElementById('verifierRequestsList');
   const pending = currentRequests.filter(r=>r.recordType==='request' && r.status==='Pending Verification').sort((a,b)=> new Date(b.createdAt)-new Date(a.createdAt));
+  container.innerHTML = '';
   if(pending.length===0){ container.innerHTML='<p class="text-gray-500 py-6 text-center">Tidak ada permintaan menunggu verifikasi</p>'; return; }
-  container.innerHTML = pending.map(r=>`<div class="p-4 border rounded cursor-pointer hover:shadow-sm" onclick="viewRequestDetail('${r.__id}')"><div class="flex justify-between"><div><h3 class="font-bold">${escapeHtml(r.documentNumber)}</h3><p class="text-sm text-gray-600">${escapeHtml(r.workUnit)} - ${escapeHtml(r.year)}</p></div><span class="px-3 py-1 rounded-full bg-yellow-200 text-yellow-800">Step 1: Pending Verification</span></div><p class="text-sm text-gray-700 mt-2"><strong>Requester:</strong> ${escapeHtml(r.requesterName)} (${escapeHtml(r.requesterNIP)})</p></div>`).join('');
+
+  pending.forEach(r=>{
+    const card = document.createElement('div');
+    card.className = 'p-4 border rounded cursor-pointer hover:shadow-sm';
+    card.addEventListener('click', ()=> viewRequestDetail(r.__id));
+
+    const top = document.createElement('div');
+    top.className = 'flex justify-between';
+    const left = document.createElement('div');
+    const h = document.createElement('h3'); h.className='font-bold'; h.textContent = r.documentNumber;
+    const sub = document.createElement('p'); sub.className='text-sm text-gray-600'; sub.textContent = `${r.workUnit} - ${r.year}`;
+    left.appendChild(h); left.appendChild(sub);
+
+    const badge = document.createElement('span'); badge.className='px-3 py-1 rounded-full bg-yellow-200 text-yellow-800'; badge.textContent='Step 1: Pending Verification';
+    top.appendChild(left); top.appendChild(badge);
+
+    const footer = document.createElement('p'); footer.className='text-sm text-gray-700 mt-2'; footer.innerHTML = `<strong>Requester:</strong> ${escapeHtml(r.requesterName)} (${escapeHtml(r.requesterNIP)})`;
+
+    card.appendChild(top); card.appendChild(footer);
+    container.appendChild(card);
+  });
 }
 
+/* programmatic supervisor dashboard */
 function renderSupervisorDashboard(){
-  const container=document.getElementById('supervisorRequestsList');
+  const container = document.getElementById('supervisorRequestsList');
   const pending = currentRequests.filter(r=>r.recordType==='request' && r.status==='Verified - Pending Approval').sort((a,b)=> new Date(b.updatedAt||b.createdAt)-new Date(a.updatedAt||a.createdAt));
+  container.innerHTML = '';
   if(pending.length===0){ container.innerHTML='<p class="text-gray-500 py-6 text-center">Tidak ada permintaan menunggu persetujuan akhir</p>'; return; }
-  container.innerHTML = pending.map(r=>`<div class="p-4 border rounded cursor-pointer hover:shadow-sm" onclick="viewRequestDetail('${r.__id}')"><div class="flex justify-between"><div><h3 class="font-bold">${escapeHtml(r.documentNumber)}</h3><p class="text-sm text-gray-600">${escapeHtml(r.workUnit)} - ${escapeHtml(r.year)}</p></div><span class="px-3 py-1 rounded-full bg-blue-200 text-blue-800">Step 2: Pending Final Approval</span></div><p class="text-sm text-gray-700 mt-2"><strong>Requester:</strong> ${escapeHtml(r.requesterName)} (${escapeHtml(r.requesterNIP)})</p></div>`).join('');
+
+  pending.forEach(r=>{
+    const card = document.createElement('div');
+    card.className = 'p-4 border rounded cursor-pointer hover:shadow-sm';
+    card.addEventListener('click', ()=> viewRequestDetail(r.__id));
+
+    const top = document.createElement('div');
+    top.className = 'flex justify-between';
+    const left = document.createElement('div');
+    const h = document.createElement('h3'); h.className='font-bold'; h.textContent = r.documentNumber;
+    const sub = document.createElement('p'); sub.className='text-sm text-gray-600'; sub.textContent = `${r.workUnit} - ${r.year}`;
+    left.appendChild(h); left.appendChild(sub);
+
+    const badge = document.createElement('span'); badge.className='px-3 py-1 rounded-full bg-blue-200 text-blue-800'; badge.textContent='Step 2: Pending Final Approval';
+    top.appendChild(left); top.appendChild(badge);
+
+    const footer = document.createElement('p'); footer.className='text-sm text-gray-700 mt-2'; footer.innerHTML = `<strong>Requester:</strong> ${escapeHtml(r.requesterName)} (${escapeHtml(r.requesterNIP)})`;
+
+    card.appendChild(top); card.appendChild(footer);
+    container.appendChild(card);
+  });
 }
 
 /* CRUD */
@@ -701,7 +799,8 @@ function init(){
 
   document.getElementById('filterMonth').addEventListener('change', ()=> renderAllRequests());
   document.getElementById('filterYear').addEventListener('change', ()=> renderAllRequests());
-  document.getElementById('btnExportFiltered').addEventListener('click', ()=>{    const month=document.getElementById('filterMonth').value, year=document.getElementById('filterYear').value;
+  document.getElementById('btnExportFiltered').addEventListener('click', ()=>{
+    const month=document.getElementById('filterMonth').value, year=document.getElementById('filterYear').value;
     const filtered=currentRequests.filter(r=>{
       if(r.recordType!=='request') return false;
       if(!month && !year) return true;
