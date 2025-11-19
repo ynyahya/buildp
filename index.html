@@ -26,6 +26,7 @@
       /* ensure goods release section does not split */
       #goodsReleaseSection { page-break-inside: avoid; break-inside: avoid; -webkit-column-break-inside: avoid; }
       #goodsReleaseSection .grid { page-break-inside: avoid; break-inside: avoid; }
+      #logoContainer img { width: 96px !important; height: auto !important; }
     }
     /* screen styles */
     .signature-card { border: 1px dashed #c7d2fe; border-radius: 8px; padding: 8px; background: #fafafa; }
@@ -52,7 +53,7 @@
 
     <!-- Form view -->
     <div id="viewForm" class="bg-white rounded shadow p-6 print-section">
-           <div class="text-center mb-6">
+      <div class="text-center mb-6">
         <!-- LOGO (akan diisi oleh JS dari appSettings.logo_url) -->
         <div id="logoContainer" class="mb-3">
           <img id="uiLogo" src="" alt="Logo" class="mx-auto" style="width:96px; height:auto; object-fit:contain; display:none;">
@@ -62,7 +63,6 @@
         <p id="uiBudgetYear" class="text-sm text-gray-600">Tahun Anggaran 2025</p>
         <p id="uiOrg" class="text-sm text-gray-500">BPS Kota Jakarta Selatan</p>
       </div>
-
 
       <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
         <div>
@@ -245,7 +245,7 @@ function saveSettingsToStorage(){ localStorage.setItem(SETTINGS_KEY, JSON.string
 
 /* UI utils */
 function showToast(msg, isError=false){ const el=document.createElement('div'); el.className=`toast ${isError?'error':''}`; el.textContent=msg; document.body.appendChild(el); setTimeout(()=>el.remove(),3500); }
-function escapeHtml(s){ if(!s) return ''; return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function escapeHtml(s){ if(!s) return ''; return String(s).replace(/[&<>\"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function formatDate(d){ if(!d) return '-'; const date=new Date(d); const months=['January','February','March','April','May','June','July','August','September','October','November','December']; return `${date.getDate()} ${months[date.getMonth()]} ${date.getFullYear()}`; }
 
 /* state */
@@ -732,6 +732,24 @@ function applySettingsToUI(){
   yearSelect.value = appSettings.budget_year;
   filterYear.value = appSettings.budget_year;
   buildDocFormatPreview();
+
+  // --- logo handling with fallback on error ---
+  const logoEl = document.getElementById('uiLogo');
+  if(logoEl){
+    if(appSettings.logo_url && appSettings.logo_url.trim() !== ''){
+      logoEl.style.display = 'block';
+      logoEl.src = appSettings.logo_url;
+      // jika gambar gagal dimuat, sembunyikan
+      logoEl.onerror = function(){ console.warn('Logo failed to load:', appSettings.logo_url); this.style.display = 'none'; this.src = ''; };
+      // jika berhasil load, pastikan tampil
+      logoEl.onload = function(){ this.style.display = 'block'; };
+    } else {
+      logoEl.onerror = null;
+      logoEl.onload = null;
+      logoEl.src = '';
+      logoEl.style.display = 'none';
+    }
+  }
 }
 
 /* init */
@@ -782,13 +800,20 @@ function init(){
     exportRequestsToCSV(filtered, `requests_${month||'all'}_${year||'all'}.csv`);
   });
 
-  document.getElementById('btnExportAll').addEventListener('click', ()=> exportRequestsToCSV(currentRequests.filter(r=>r.recordType==='request'), `requests_all.csv`));
+  // guard for optional btnExportAll (in case not present)
+  const btnExportAll = document.getElementById('btnExportAll');
+  if(btnExportAll) btnExportAll.addEventListener('click', ()=> exportRequestsToCSV(currentRequests.filter(r=>r.recordType==='request'), `requests_all.csv`));
 
   // live preview of format in settings
   document.getElementById('settingDocFormat').addEventListener('input', (e)=> {
     const v = e.target.value.trim(); appSettings.doc_format = v; buildDocFormatPreview(); updateDocumentNumber();
   });
   document.getElementById('settingDocPrefix').addEventListener('input', (e)=> { appSettings.doc_prefix = e.target.value.trim(); buildDocFormatPreview(); updateDocumentNumber(); });
+
+  // live preview of logo url while typing in settings
+  document.getElementById('settingLogoUrl').addEventListener('input', (e)=> {
+    appSettings.logo_url = e.target.value.trim(); applySettingsToUI();
+  });
 
   // update number when submission date or year changes
   document.getElementById('submissionDate').addEventListener('change', updateDocumentNumber);
