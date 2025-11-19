@@ -624,7 +624,6 @@ function viewRequestDetail(id){
   } else supSection.innerHTML='';
 }
 
-
 /* export CSV */
 function exportRequestsToCSV(filteredList, filename){
   const rows=[['DocumentNumber','Year','WorkUnit','Status','Requester','RequesterNIP','SubmissionDate','SubmissionLocation','Items','Verifier','VerifierNIP','VerificationDate','Supervisor','SupervisorNIP','SupervisorApprovalDate','CreatedAt','UpdatedAt']];
@@ -702,14 +701,15 @@ function init(){
 
   document.getElementById('filterMonth').addEventListener('change', ()=> renderAllRequests());
   document.getElementById('filterYear').addEventListener('change', ()=> renderAllRequests());
-  document.getElementById('btnExportFiltered').addEventListener('click', ()=>{
-    const month=document.getElementById('filterMonth').value, year=document.getElementById('filterYear').value;
+  document.getElementById('btnExportFiltered').addEventListener('click', ()=>{    const month=document.getElementById('filterMonth').value, year=document.getElementById('filterYear').value;
     const filtered=currentRequests.filter(r=>{
       if(r.recordType!=='request') return false;
       if(!month && !year) return true;
       const parts=(r.documentNumber||'').split('/'); const m=parts[2]||''; const y=parts[3]||'';
       if(month && year) return m===month && y===year;
-      if(month) return m===month; if(year) return y===year; return true;
+      if(month) return m===month;
+      if(year) return y===year;
+      return true;
     });
     exportRequestsToCSV(filtered, `requests_${month||'all'}_${year||'all'}.csv`);
   });
