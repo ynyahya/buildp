@@ -305,7 +305,7 @@ function initRequestSignature(){ const canvas=document.getElementById('requester
 /* rendering helpers */
 function getStatusColorClass(status){ switch(status){ case 'Pending Verification': return 'bg-yellow-200 text-yellow-800'; case 'Verified - Pending Approval': return 'bg-blue-200 text-blue-800'; case 'Fully Approved': return 'bg-green-200 text-green-800'; case 'Rejected by Verifier': case 'Rejected by Supervisor': return 'bg-red-200 text-red-800'; default: return 'bg-gray-200 text-gray-800'; } }
 
-/* NEW: programmatic renderAllRequests to avoid click issues */
+/* NEW: robust card-click renderAllRequests */
 function renderAllRequests(){
   const container = document.getElementById('allRequestsList');
   const monthFilter = document.getElementById('filterMonth').value;
@@ -333,12 +333,14 @@ function renderAllRequests(){
   list.forEach(r => {
     const card = document.createElement('div');
     card.className = 'border rounded p-4 shadow-sm flex justify-between items-start';
+    // make whole card clickable
+    card.addEventListener('click', () => viewRequestDetail(r.__id));
+    card.style.cursor = 'pointer';
 
-    // left clickable area
+    // left area (info)
     const left = document.createElement('div');
-    left.className = 'cursor-pointer flex-1';
     left.style.minWidth = '0';
-    left.addEventListener('click', () => viewRequestDetail(r.__id));
+    left.style.flex = '1';
 
     const h3 = document.createElement('h3');
     h3.className = 'font-bold';
@@ -361,13 +363,15 @@ function renderAllRequests(){
     left.appendChild(p2);
     left.appendChild(p3);
 
-    // right actions
+    // right actions (these must stop propagation)
     const right = document.createElement('div');
-    right.className = 'flex items-center gap-2';
+    right.className = 'flex items-center gap-2 no-print';
+    right.style.marginLeft = '12px';
 
     const statusBadge = document.createElement('span');
     statusBadge.className = `px-3 py-1 rounded-full text-sm ${getStatusColorClass(r.status)}`;
     statusBadge.textContent = r.status || '-';
+    statusBadge.addEventListener('click', (ev) => ev.stopPropagation());
 
     const waBtn = document.createElement('button');
     waBtn.className = 'px-3 py-1 bg-green-500 text-white rounded';
@@ -385,7 +389,6 @@ function renderAllRequests(){
 
     card.appendChild(left);
     card.appendChild(right);
-
     container.appendChild(card);
   });
 }
