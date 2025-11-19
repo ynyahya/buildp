@@ -750,7 +750,6 @@ function init(){
   applySettingsToUI(); updateDocumentNumber(); renderAllRequests(); renderVerifierDashboard(); renderSupervisorDashboard();
 }
 
-init(); switchView('form');
 
 /* expose for html onclick */
 window.viewRequestDetail = viewRequestDetail;
