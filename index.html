@@ -7,6 +7,11 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- Signature Pad -->
   <script src="https://cdn.jsdelivr.net/npm/signature_pad@4.0.0/dist/signature_pad.umd.min.js"></script>
+
+  <!-- ExcelJS + FileSaver (untuk export Excel dengan gambar) -->
+  <script src="https://cdn.jsdelivr.net/npm/exceljs/dist/exceljs.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js"></script>
+
   <style>
     body { box-sizing: border-box; }
     .toast { position: fixed; top: 20px; right: 20px; background: #10b981; color: white; padding: 12px 18px; border-radius: 8px; z-index: 1200; box-shadow: 0 6px 18px rgba(0,0,0,0.08); }
@@ -693,7 +698,7 @@ function viewRequestDetail(id){
   switchView('detail');
 }
 
-/* export CSV */
+/* export CSV (fallback) */
 function exportRequestsToCSV(filteredList, filename){
   const rows=[['DocumentNumber','Year','WorkUnit','Status','Requester','RequesterNIP','SubmissionDate','SubmissionLocation','Items','Verifier','VerifierNIP','VerificationDate','Supervisor','SupervisorNIP','SupervisorApprovalDate','CreatedAt','UpdatedAt']];
   filteredList.forEach(r=>{
@@ -702,6 +707,135 @@ function exportRequestsToCSV(filteredList, filename){
   });
   const csv = rows.map(r=> r.map(cell=>`"${String(cell||'').replace(/"/g,'""')}"`).join(',')).join('\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' }); const url = URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=filename||'requests.csv'; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+}
+
+/* Export ke .xlsx termasuk embed signature images (ExcelJS) */
+async function exportRequestsToExcelWithImages(filteredList, filename){
+  filename = filename || 'requests.xlsx';
+  try{
+    if(typeof ExcelJS === 'undefined'){
+      showToast('Library ExcelJS belum dimuat, mencoba fallback CSV', true);
+      exportRequestsToCSV(filteredList, filename.replace(/\.xlsx$/i,'.csv'));
+      return;
+    }
+
+    const wb = new ExcelJS.Workbook();
+    wb.creator = 'Form ATK';
+    wb.created = new Date();
+
+    const ws = wb.addWorksheet('Requests', {
+      views: [{state: 'frozen', xSplit: 0, ySplit: 1}],
+    });
+
+    // Define columns
+    ws.columns = [
+      { header: 'DocumentNumber', key: 'documentNumber', width: 18 },
+      { header: 'Year', key: 'year', width: 8 },
+      { header: 'WorkUnit', key: 'workUnit', width: 18 },
+      { header: 'Status', key: 'status', width: 18 },
+      { header: 'Requester', key: 'requesterName', width: 20 },
+      { header: 'RequesterNIP', key: 'requesterNIP', width: 22 },
+      { header: 'SubmissionDate', key: 'submissionDate', width: 15 },
+      { header: 'SubmissionLocation', key: 'submissionLocation', width: 15 },
+      { header: 'Items', key: 'items', width: 40 },
+      { header: 'Verifier', key: 'verifierName', width: 18 },
+      { header: 'VerifierNIP', key: 'verifierNIP', width: 22 },
+      { header: 'Supervisor', key: 'supervisorName', width: 18 },
+      { header: 'SupervisorNIP', key: 'supervisorNIP', width: 22 },
+      { header: 'CreatedAt', key: 'createdAt', width: 22 },
+      { header: 'UpdatedAt', key: 'updatedAt', width: 22 },
+      // Keep some empty columns for signature images
+      { header: 'Sig_Verifier', key: 'sig_verifier', width: 14 },
+      { header: 'Sig_Supervisor', key: 'sig_supervisor', width: 14 },
+      { header: 'Sig_Requester', key: 'sig_requester', width: 14 }
+    ];
+
+    // style header
+    ws.getRow(1).font = { bold: true };
+
+    // helper to convert dataURL to base64 without prefix
+    function dataUrlToBase64(dataUrl){
+      if(!dataUrl) return null;
+      const idx = dataUrl.indexOf('base64,');
+      return idx === -1 ? null : dataUrl.slice(idx + 7);
+    }
+
+    // append rows first (text fields), keep track of row index and image base64s
+    const imagesToAdd = []; // {base64, sheetRow, colKey, ext}
+    filteredList.forEach((r, i) => {
+      const itemsText = (r.items||[]).map(it=>`${it.name} (${it.quantity} ${it.unit||''})`).join(' | ');
+      const rowIndex = i + 2; // header is row 1
+      ws.addRow({
+        documentNumber: r.documentNumber || '',
+        year: r.year || '',
+        workUnit: r.workUnit || '',
+        status: r.status || '',
+        requesterName: r.requesterName || '',
+        requesterNIP: r.requesterNIP || '',
+        submissionDate: r.submissionDate || '',
+        submissionLocation: r.submissionLocation || '',
+        items: itemsText,
+        verifierName: r.verifierName || '',
+        verifierNIP: r.verifierNIP || '',
+        supervisorName: r.supervisorName || '',
+        supervisorNIP: r.supervisorNIP || '',
+        createdAt: r.createdAt || '',
+        updatedAt: r.updatedAt || ''
+      });
+
+      // prepare images (expect PNG dataURLs). Map them to specific column headers
+      if(r.verifierSignature){
+        const b = dataUrlToBase64(r.verifierSignature);
+        if(b) imagesToAdd.push({base64: b, row: rowIndex, col: 'Sig_Verifier', ext:'png'});
+      }
+      if(r.supervisorSignature){
+        const b = dataUrlToBase64(r.supervisorSignature);
+        if(b) imagesToAdd.push({base64: b, row: rowIndex, col: 'Sig_Supervisor', ext:'png'});
+      }
+      if(r.requesterSignature){
+        const b = dataUrlToBase64(r.requesterSignature);
+        if(b) imagesToAdd.push({base64: b, row: rowIndex, col: 'Sig_Requester', ext:'png'});
+      }
+
+      // set a larger row height to fit signature images
+      ws.getRow(rowIndex).height = 60; // in points (~px)
+    });
+
+    // Add images into workbook and position them
+    for(const img of imagesToAdd){
+      try{
+        const imageId = wb.addImage({
+          base64: img.base64,
+          extension: img.ext || 'png'
+        });
+
+        // find the column number (ExcelJS columns are 1-indexed)
+        const colNumber = ws.columns.findIndex(c => c && c.header === img.col) + 1;
+        if(colNumber <= 0) continue;
+
+        // place image inside the cell area (tl = top-left, br = bottom-right)
+        ws.addImage(imageId, {
+          tl: { col: colNumber - 1 + 0.15, row: img.row - 1 + 0.1 }, // zero-based cell coords
+          br: { col: colNumber - 1 + 0.85, row: img.row - 1 + 0.9 }
+        });
+      }catch(e){
+        console.warn('failed to add image to excel row', img.row, e);
+      }
+    }
+
+    // auto-wrap for items column
+    ws.getColumn('items').alignment = { wrapText: true, vertical: 'top' };
+
+    // write and save
+    const buf = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    saveAs(blob, filename);
+    showToast('Export Excel dengan tanda tangan selesai');
+  }catch(err){
+    console.error('exportRequestsToExcelWithImages error', err);
+    showToast('Gagal export Excel dengan gambar, fallback CSV dibuat', true);
+    exportRequestsToCSV(filteredList, filename.replace(/\.xlsx$/i,'.csv'));
+  }
 }
 
 /* switch view & settings apply */
@@ -788,6 +922,7 @@ function init(){
 
   document.getElementById('filterMonth').addEventListener('change', ()=> renderAllRequests());
   document.getElementById('filterYear').addEventListener('change', ()=> renderAllRequests());
+
   document.getElementById('btnExportFiltered').addEventListener('click', ()=>{
     const month=document.getElementById('filterMonth').value, year=document.getElementById('filterYear').value;
     const filtered=currentRequests.filter(r=>{
@@ -797,12 +932,12 @@ function init(){
       if(month && year) return m===month && y===year;
       if(month) return m===month; if(year) return y===year; return true;
     });
-    exportRequestsToCSV(filtered, `requests_${month||'all'}_${year||'all'}.csv`);
+    exportRequestsToExcelWithImages(filtered, `requests_${month||'all'}_${year||'all'}.xlsx`);
   });
 
   // guard for optional btnExportAll (in case not present)
   const btnExportAll = document.getElementById('btnExportAll');
-  if(btnExportAll) btnExportAll.addEventListener('click', ()=> exportRequestsToCSV(currentRequests.filter(r=>r.recordType==='request'), `requests_all.csv`));
+  if(btnExportAll) btnExportAll.addEventListener('click', ()=> exportRequestsToExcelWithImages(currentRequests.filter(r=>r.recordType==='request'), `requests_all.xlsx`));
 
   // live preview of format in settings
   document.getElementById('settingDocFormat').addEventListener('input', (e)=> {
