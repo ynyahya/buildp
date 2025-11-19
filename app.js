@@ -1,6 +1,243 @@
-/* Simple single-file JS for ATK app (works with index.html & style.css)
-   menggabungkan fitur: penyimpanan localStorage, signature pad, CRUD, export xlsx dengan gambar. */
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Form Permintaan ATK - BPS</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Signature Pad -->
+  <script src="https://cdn.jsdelivr.net/npm/signature_pad@4.0.0/dist/signature_pad.umd.min.js"></script>
 
+  <!-- ExcelJS + FileSaver (untuk export Excel dengan gambar) -->
+  <script src="https://cdn.jsdelivr.net/npm/exceljs/dist/exceljs.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js"></script>
+
+  <style>
+    body { box-sizing: border-box; }
+    .toast { position: fixed; top: 20px; right: 20px; background: #10b981; color: white; padding: 12px 18px; border-radius: 8px; z-index: 1200; box-shadow: 0 6px 18px rgba(0,0,0,0.08); }
+    .toast.error { background: #ef4444; }
+    .print-section { page-break-inside: avoid; }
+    @media print { 
+      .no-print { display: none !important; } 
+      body { background: white !important; margin: 0; padding: 12px; }
+      .print-section { page-break-inside: avoid; box-shadow: none !important; }
+      #app { max-width: 100% !important; padding: 0 !important; margin: 0 !important; }
+      #viewDetail, #viewForm { box-shadow: none !important; border: none !important; padding: 0 12px !important; }
+      table { page-break-inside: auto; width:100% !important; }
+      tr { page-break-inside: avoid; page-break-after: auto; }
+      .digital-signature { border: 2px solid #10b981 !important; background: #f0fdf4 !important; print-color-adjust: exact; -webkit-print-color-adjust: exact; page-break-inside: avoid; }
+      /* make signature images responsive for print */
+      .sig-img { max-width: 160px !important; width: 100% !important; height: auto !important; max-height: 90px !important; display:block; margin-left:auto; margin-right:auto;}
+      /* ensure goods release section does not split */
+      #goodsReleaseSection { page-break-inside: avoid; break-inside: avoid; -webkit-column-break-inside: avoid; }
+      #goodsReleaseSection .grid { page-break-inside: avoid; break-inside: avoid; }
+      #logoContainer img { width: 96px !important; height: auto !important; }
+    }
+    /* screen styles */
+    .signature-card { border: 1px dashed #c7d2fe; border-radius: 8px; padding: 8px; background: #fafafa; }
+    canvas.signature-canvas { width: 100% !important; height: 300px !important; touch-action: none; border-radius: 6px; background: white; border: 1px solid #e5e7eb; }
+    .digital-signature { border: 2px solid #10b981; background: #f0fdf4; padding: 12px; border-radius: 8px; font-family: 'Courier New', monospace; }
+    /* signature image default style (screen) */
+    .sig-img { max-width: 160px; width: 100%; height: auto; display:block; margin-left:auto; margin-right:auto; border:1px solid #e5e7eb; border-radius:6px; background:white; padding:4px; }
+  </style>
+</head>
+<body class="bg-gray-50 min-h-screen text-gray-800">
+  <div id="app" class="max-w-6xl mx-auto p-6">
+
+  <!-- Responsive top menu: wrap, center on small screens, horizontal on larger screens -->
+<div class="no-print mb-6">
+  <div class="flex flex-wrap items-center gap-3 justify-center sm:justify-start">
+    <button id="btnNew" class="w-full sm:w-auto px-4 py-2 bg-blue-600 text-white rounded shadow-sm">ðŸ“ Permintaan Baru</button>
+    <button id="btnAll" class="w-full sm:w-auto px-4 py-2 bg-gray-700 text-white rounded shadow-sm">ðŸ“‹ Semua Permintaan</button>
+    <button id="btnVerifier" class="w-full sm:w-auto px-4 py-2 bg-orange-600 text-white rounded shadow-sm">âœ… Verifikator</button>
+    <button id="btnSupervisor" class="w-full sm:w-auto px-4 py-2 bg-purple-600 text-white rounded shadow-sm">ðŸ‘” Penanggung Jawab</button>
+    <button id="btnSettings" class="w-full sm:w-auto px-4 py-2 bg-gray-800 text-white rounded shadow-sm">âš™ï¸ Pengaturan</button>
+  </div>
+</div>
+
+
+    <!-- Form view -->
+    <div id="viewForm" class="bg-white rounded shadow p-6 print-section">
+      <div class="text-center mb-6">
+        <!-- LOGO (akan diisi oleh JS dari appSettings.logo_url) -->
+        <div id="logoContainer" class="mb-3">
+          <img id="uiLogo" src="" alt="Logo" class="mx-auto" style="width:96px; height:auto; object-fit:contain; display:none;">
+        </div>
+
+        <h1 id="uiFormTitle" class="text-2xl font-bold">Form Permintaan ATK</h1>
+        <p id="uiBudgetYear" class="text-sm text-gray-600">Tahun Anggaran 2025</p>
+        <p id="uiOrg" class="text-sm text-gray-500">BPS Kota Jakarta Selatan</p>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+        <div>
+          <label class="text-sm font-semibold">No Dokumen</label>
+          <input id="documentNumber" readonly class="mt-2 w-full px-3 py-2 border rounded bg-gray-100">
+        </div>
+        <div>
+          <label class="text-sm font-semibold">Tahun</label>
+          <select id="yearSelect" class="mt-2 w-full border rounded px-3 py-2"></select>
+        </div>
+        <div>
+          <label class="text-sm font-semibold">Bagian/Fungsi</label>
+          <select id="workUnitSelect" class="mt-2 w-full border rounded px-3 py-2">
+            <option value="">Pilih Bagian/Fungsi</option>
+            <option>Subbagian Umum</option><option>Sosial</option><option>Produksi</option><option>Distribusi</option><option>Nerwilis</option><option>IPDS</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="mb-4">
+        <div class="flex justify-between items-center mb-2">
+          <h2 class="font-bold text-lg">Rincian ATK</h2>
+          <button id="btnAddItem" class="px-3 py-2 bg-green-600 text-white rounded">+ Tambah Item</button>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full border-collapse">
+            <thead>
+              <tr class="bg-gray-100">
+                <th class="p-3 border">No</th><th class="p-3 border">Nama Item</th><th class="p-3 border w-28">Jumlah</th><th class="p-3 border">Satuan</th><th class="p-3 border">Aksi</th>
+              </tr>
+            </thead>
+            <tbody id="itemsTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+        <div><label class="text-sm font-semibold">Lokasi Pengajuan</label><input id="submissionLocation" value="Jakarta" class="mt-2 w-full px-3 py-2 border rounded"></div>
+        <div><label class="text-sm font-semibold">Tanggal Pengajuan</label><input id="submissionDate" type="date" class="mt-2 w-full px-3 py-2 border rounded"></div>
+      </div>
+
+      <div class="mb-6">
+        <h2 class="text-lg font-bold mb-2">Informasi Pemohon</h2>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div><label class="text-sm">Nama *</label><input id="requesterName" class="mt-2 w-full px-3 py-2 border rounded" placeholder="Nama pemohon"></div>
+          <div><label class="text-sm">NIP *</label><input id="requesterNIP" class="mt-2 w-full px-3 py-2 border rounded" placeholder="contoh: 199012345678901234"></div>
+        </div>
+
+       <div class="mt-4 p-3 bg-blue-50 border rounded">
+  <div class="flex flex-col md:flex-row items-start gap-3">
+    <!-- ubah dari w-1/2 ke flex-1 agar mengisi sisa ruang -->
+    <div class="flex-1">
+      <p class="text-sm font-semibold mb-1">Tanda Tangan Digital (Pemohon)</p>
+      <div class="signature-card w-full">
+        <canvas id="requesterSignatureCanvas" class="signature-canvas"></canvas>
+        <div class="flex gap-2 mt-2">
+          <button id="reqSigClear" class="px-3 py-1 bg-red-500 text-white rounded">Clear</button>
+          <button id="reqSigSave" class="px-3 py-1 bg-green-600 text-white rounded">Save Signature</button>
+        </div>
+      </div>
+      <p class="text-xs text-gray-600 mt-2">â„¹ï¸ Petunjuk: Tanda tangan gunakan mouse atau sentuh. Setelah disimpan, tanda tangan akan tercantum pada dokumen.</p>
+    </div>
+
+    <!-- penjelasan / helper tetap ada, tapi posisinya di kanan pada layar besar -->
+    <div class="w-full md:w-80 text-sm text-gray-700">
+      <!-- tambahan instruksi jika perlu -->
+      <p class="mb-1"><strong>Tips:</strong></p>
+      <ul class="text-xs list-disc ml-4">
+        <li>Gunakan mouse atau jari (mobile)</li>
+        <li>Tekan <em>Save Signature</em> untuk menyimpan</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+      </div>
+
+      <div class="mt-6">
+        <button id="submitRequestBtn" class="w-full px-6 py-3 bg-blue-600 text-white rounded text-lg font-bold">Kirim Permintaan</button>
+      </div>
+    </div>
+
+    <!-- All requests -->
+    <div id="viewAll" class="hidden bg-white rounded shadow p-6">
+      <div class="flex items-center gap-4 mb-4">
+        <h2 class="text-xl font-bold">Semua Permintaan ATK</h2>
+        <div class="ml-auto flex items-center gap-2">
+          <label class="text-sm">Filter Bulan</label>
+          <select id="filterMonth" class="border rounded px-2 py-1">
+            <option value="">Semua</option>
+            <option value="01">Jan</option><option value="02">Feb</option><option value="03">Mar</option>
+            <option value="04">Apr</option><option value="05">Mei</option><option value="06">Jun</option>
+            <option value="07">Jul</option><option value="08">Agu</option><option value="09">Sep</option>
+            <option value="10">Okt</option><option value="11">Nov</option><option value="12">Des</option>
+          </select>
+          <label class="text-sm">Tahun</label>
+          <select id="filterYear" class="border rounded px-2 py-1"></select>
+          <button id="btnExportFiltered" class="ml-2 px-3 py-1 bg-indigo-700 text-white rounded">Export Filtered</button>
+        </div>
+      </div>
+      <div id="allRequestsList" class="space-y-4"></div>
+    </div>
+
+    <!-- Verifier -->
+    <div id="viewVerifier" class="hidden bg-white rounded shadow p-6">
+      <h2 class="text-xl font-bold mb-4">Dashboard Verifikator</h2>
+      <div id="verifierRequestsList" class="space-y-4"></div>
+    </div>
+
+    <!-- Supervisor -->
+    <div id="viewSupervisor" class="hidden bg-white rounded shadow p-6">
+      <h2 class="text-xl font-bold mb-4">Dashboard Penanggung Jawab</h2>
+      <div id="supervisorRequestsList" class="space-y-4"></div>
+    </div>
+
+    <!-- Detail -->
+    <div id="viewDetail" class="hidden bg-white rounded shadow p-6 print-section"></div>
+
+    <!-- Settings with Document Format & Prefix & WhatsApp number -->
+    <div id="viewSettings" class="hidden bg-white rounded shadow p-6">
+      <h2 class="text-xl font-bold mb-4">Pengaturan</h2>
+      <div class="mb-4">
+        <label class="text-sm">Judul Form</label>
+        <input id="settingFormTitle" class="mt-2 w-full px-3 py-2 border rounded" placeholder="Form Permintaan ATK">
+      </div>
+      <div class="mb-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <label class="text-sm">Tahun Anggaran</label>
+          <input id="settingBudgetYear" class="mt-2 w-full px-3 py-2 border rounded" placeholder="2025">
+        </div>
+        <div>
+          <label class="text-sm">Document Number Prefix (nomor awal)</label>
+          <input id="settingDocPrefix" class="mt-2 w-full px-3 py-2 border rounded" placeholder="0001">
+        </div>
+      </div>
+
+      <div class="mb-4">
+        <label class="text-sm">Document Number Format</label>
+        <input id="settingDocFormat" class="mt-2 w-full px-3 py-2 border rounded" placeholder="{AUTO}/ATK/{MM}/{YYYY}">
+        <p class="text-xs text-gray-500 mt-1">Gunakan placeholder <code>{AUTO}</code>, <code>{MM}</code>, <code>{YYYY}</code>. Contoh default: <code>{AUTO}/ATK/{MM}/{YYYY}</code></p>
+        <div class="mt-2">
+          <strong>Preview:</strong> <span id="docFormatPreview" class="font-mono"></span>
+        </div>
+      </div>
+
+      <div class="mb-4">
+        <label class="text-sm">Nomor WhatsApp Notifikasi</label>
+        <input id="settingWhatsAppNumber" class="mt-2 w-full px-3 py-2 border rounded" placeholder="628123456789 (tanpa + atau spasi)">
+        <p class="text-xs text-gray-500 mt-1">Nomor untuk tombol "Buka WA". Jika kosong, pesan akan disalin ke clipboard.</p>
+      </div>
+
+      <div class="mb-4">
+        <label class="text-sm">Nama Organisasi</label>
+        <input id="settingOrgName" class="mt-2 w-full px-3 py-2 border rounded" placeholder="BPS Kota Jakarta Selatan">
+      </div>
+      <div class="mb-4">
+        <label class="text-sm">Logo URL (opsional)</label>
+        <input id="settingLogoUrl" class="mt-2 w-full px-3 py-2 border rounded" placeholder="https://example.com/logo.png">
+      </div>
+      <div class="flex gap-3">
+        <button id="saveSettingsBtn" class="px-4 py-2 bg-green-600 text-white rounded">ðŸ’¾ Save Settings</button>
+        <button id="cancelSettingsBtn" class="px-4 py-2 bg-gray-500 text-white rounded">Cancel</button>
+      </div>
+    </div>
+
+  </div>
+
+  <div id="toastContainer"></div>
+
+<script>
 /* STORAGE KEYS */
 const STORAGE_KEY = 'atk_requests_v1';
 const SETTINGS_KEY = 'atk_settings_v1';
@@ -59,7 +296,7 @@ function buildDocFormatPreview(){
   const sampleAuto = (appSettings.doc_prefix||'1').replace(/^0+/,'') || '1';
   const padded = (""+sampleAuto).padStart(4,'0');
   const preview = fmt.replace(/\{AUTO\}/g, padded).replace(/\{MM\}/g, mm).replace(/\{YYYY\}/g, yyyy);
-  const el = document.getElementById('docFormatPreview'); if(el) el.textContent = preview;
+  document.getElementById('docFormatPreview').textContent = preview;
 }
 
 /* generate document number using format and prefix */
@@ -133,8 +370,8 @@ function renderAllRequests(){
       </div>
       <div class="flex items-center gap-2">
         ${statusBadge}
-        <button onclick="openWhatsAppFor('${r.__id}')" class="px-3 py-1 bg-green-500 text-white rounded">📱 Buka WA</button>
-        <button onclick="deleteRequest('${r.__id}', event)" class="px-3 py-1 bg-red-500 text-white rounded">🗑️ Hapus</button>
+        <button onclick="openWhatsAppFor('${r.__id}')" class="px-3 py-1 bg-green-500 text-white rounded">ðŸ“± Buka WA</button>
+        <button onclick="deleteRequest('${r.__id}', event)" class="px-3 py-1 bg-red-500 text-white rounded">ðŸ—‘ï¸ Hapus</button>
       </div>
     </div>`; }).join('');
 }
@@ -229,14 +466,14 @@ function openWhatsAppFor(id){
   }
 }
 
-/* Detail view (dengan verifikator & supervisor flows) */
+/* Detail view (with verifikator & supervisor signature flows) */
 function viewRequestDetail(id){
   const r = currentRequests.find(x => x.__id === id);
   if(!r) return;
   viewDetail.innerHTML = `
     <div class="no-print mb-4">
-      <button id="backFromDetail" class="px-3 py-2 bg-gray-500 text-white rounded">← Back</button>
-      <button id="btnPrint" class="ml-2 px-3 py-2 bg-blue-500 text-white rounded">🖨️ Print / Export PDF</button>
+      <button id="backFromDetail" class="px-3 py-2 bg-gray-500 text-white rounded">â† Back</button>
+      <button id="btnPrint" class="ml-2 px-3 py-2 bg-blue-500 text-white rounded">ðŸ–¨ï¸ Print / Export PDF</button>
     </div>
     <div class="mb-6 border-b pb-4">
       <div class="flex items-center gap-4">
@@ -276,7 +513,7 @@ function viewRequestDetail(id){
       </div>
       <div class="mb-4">
         <div class="p-4 bg-green-50 border rounded">
-          <p class="font-semibold text-green-700">✓ DIGITALLY SIGNED</p>
+          <p class="font-semibold text-green-700">âœ“ DIGITALLY SIGNED</p>
           ${r.requesterSignature?`<img src="${r.requesterSignature}" class="sig-img" style="max-width:320px; display:block; margin-top:8px;">`:`<p class="text-sm text-gray-600">No signature saved</p>`}
           <p class="text-xs text-gray-600 mt-2">Signed by: ${escapeHtml(r.requesterName)} | NIP: ${escapeHtml(r.requesterNIP)} | Date: ${formatDate(r.submissionDate)}</p>
         </div>
@@ -309,8 +546,8 @@ function viewRequestDetail(id){
           </div>
         </div>
         <div class="flex gap-3">
-          <button id="btnVerifyConfirm" class="px-4 py-2 bg-green-600 text-white rounded">✓ Verify & Send to Penanggung Jawab</button>
-          <button id="btnRejectVer" class="px-4 py-2 bg-red-600 text-white rounded">✗ Reject Request</button>
+          <button id="btnVerifyConfirm" class="px-4 py-2 bg-green-600 text-white rounded">âœ“ Verify & Send to Penanggung Jawab</button>
+          <button id="btnRejectVer" class="px-4 py-2 bg-red-600 text-white rounded">âœ— Reject Request</button>
         </div>
       </div>`;
     // init verifier canvas after DOM insertion
@@ -359,8 +596,8 @@ function viewRequestDetail(id){
           </div>
         </div>
         <div class="flex gap-3">
-          <button id="btnApproveFinal" class="px-4 py-2 bg-green-600 text-white rounded">✓ Give Final Approval</button>
-          <button id="btnRejectSup" class="px-4 py-2 bg-red-600 text-white rounded">✗ Reject Request</button>
+          <button id="btnApproveFinal" class="px-4 py-2 bg-green-600 text-white rounded">âœ“ Give Final Approval</button>
+          <button id="btnRejectSup" class="px-4 py-2 bg-red-600 text-white rounded">âœ— Reject Request</button>
         </div>
       </div>`;
     setTimeout(()=> {
@@ -392,6 +629,7 @@ function viewRequestDetail(id){
 
   // --- GOODS RELEASE SECTION (ditampilkan untuk Fully Approved; menampilkan gambar tanda tangan di atas label)
   try{
+    // hapus bila ada
     const old = document.getElementById('goodsReleaseSection');
     if(old) old.remove();
 
@@ -400,12 +638,13 @@ function viewRequestDetail(id){
         <div id="goodsReleaseSection" class="border-t pt-6 print-section">
           <h3 class="text-xl font-bold text-gray-800 mb-6 text-center">GOODS RELEASE SECTION</h3>
           <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+            <!-- Verifikator -->
             <div class="text-center">
               <p class="text-sm font-semibold text-gray-700 mb-4">Verifikator</p>
               ${r.verifierSignature ? `<img src="${r.verifierSignature}" class="sig-img" alt="verifier-signature">` : `<p class="text-gray-400 italic mb-3">No signature</p>`}
               ${r.verifierName ? `
                 <div class="digital-signature mx-auto" style="max-width:320px;">
-                  <p class="text-green-700 font-semibold mb-1">✓ DIGITALLY SIGNED</p>
+                  <p class="text-green-700 font-semibold mb-1">âœ“ DIGITALLY SIGNED</p>
                   <p class="text-gray-800 text-sm"><strong>Signed by:</strong> ${escapeHtml(r.verifierName)}</p>
                   <p class="text-gray-700 text-sm"><strong>NIP:</strong> ${escapeHtml(r.verifierNIP || '')}</p>
                   <p class="text-gray-600 text-xs"><strong>Date:</strong> ${formatDate(r.verificationDate || '')}</p>
@@ -413,12 +652,13 @@ function viewRequestDetail(id){
               ` : `<p class="text-gray-500 text-sm">Not verified</p>`}
             </div>
 
+            <!-- Penanggung Jawab -->
             <div class="text-center">
               <p class="text-sm font-semibold text-gray-700 mb-4">Penanggung Jawab</p>
               ${r.supervisorSignature ? `<img src="${r.supervisorSignature}" class="sig-img" alt="supervisor-signature">` : `<p class="text-gray-400 italic mb-3">No signature</p>`}
               ${r.supervisorName ? `
                 <div class="digital-signature mx-auto" style="max-width:320px;">
-                  <p class="text-green-700 font-semibold mb-1">✓ DIGITALLY SIGNED</p>
+                  <p class="text-green-700 font-semibold mb-1">âœ“ DIGITALLY SIGNED</p>
                   <p class="text-gray-800 text-sm"><strong>Signed by:</strong> ${escapeHtml(r.supervisorName)}</p>
                   <p class="text-gray-700 text-sm"><strong>NIP:</strong> ${escapeHtml(r.supervisorNIP || '')}</p>
                   <p class="text-gray-600 text-xs"><strong>Date:</strong> ${formatDate(r.supervisorApprovalDate || '')}</p>
@@ -426,11 +666,12 @@ function viewRequestDetail(id){
               ` : `<p class="text-gray-500 text-sm">Not approved</p>`}
             </div>
 
+            <!-- Requester -->
             <div class="text-center">
               <p class="text-sm font-semibold text-gray-700 mb-4">Requester</p>
               ${r.requesterSignature ? `<img src="${r.requesterSignature}" class="sig-img" alt="requester-signature">` : `<p class="text-gray-400 italic mb-3">No signature</p>`}
               <div class="digital-signature mx-auto" style="max-width:320px;">
-                <p class="text-green-700 font-semibold mb-1">✓ DIGITALLY SIGNED</p>
+                <p class="text-green-700 font-semibold mb-1">âœ“ DIGITALLY SIGNED</p>
                 <p class="text-gray-800 text-sm"><strong>Signed by:</strong> ${escapeHtml(r.requesterName)}</p>
                 <p class="text-gray-700 text-sm"><strong>NIP:</strong> ${escapeHtml(r.requesterNIP || '')}</p>
                 <p class="text-gray-600 text-xs"><strong>Date:</strong> ${formatDate(r.submissionDate || '')}</p>
@@ -447,6 +688,7 @@ function viewRequestDetail(id){
           ` : '' }
         </div>
       `;
+      // sisipkan ke akhir viewDetail
       viewDetail.insertAdjacentHTML('beforeend', goodsHtml);
     }
   }catch(e){
@@ -502,6 +744,7 @@ async function exportRequestsToExcelWithImages(filteredList, filename){
       { header: 'SupervisorNIP', key: 'supervisorNIP', width: 22 },
       { header: 'CreatedAt', key: 'createdAt', width: 22 },
       { header: 'UpdatedAt', key: 'updatedAt', width: 22 },
+      // Keep some empty columns for signature images
       { header: 'Sig_Verifier', key: 'sig_verifier', width: 14 },
       { header: 'Sig_Supervisor', key: 'sig_supervisor', width: 14 },
       { header: 'Sig_Requester', key: 'sig_requester', width: 14 }
@@ -566,11 +809,13 @@ async function exportRequestsToExcelWithImages(filteredList, filename){
           extension: img.ext || 'png'
         });
 
+        // find the column number (ExcelJS columns are 1-indexed)
         const colNumber = ws.columns.findIndex(c => c && c.header === img.col) + 1;
         if(colNumber <= 0) continue;
 
+        // place image inside the cell area (tl = top-left, br = bottom-right)
         ws.addImage(imageId, {
-          tl: { col: colNumber - 1 + 0.15, row: img.row - 1 + 0.1 },
+          tl: { col: colNumber - 1 + 0.15, row: img.row - 1 + 0.1 }, // zero-based cell coords
           br: { col: colNumber - 1 + 0.85, row: img.row - 1 + 0.9 }
         });
       }catch(e){
@@ -579,8 +824,7 @@ async function exportRequestsToExcelWithImages(filteredList, filename){
     }
 
     // auto-wrap for items column
-    const itemsCol = ws.getColumn('items');
-    if(itemsCol) itemsCol.alignment = { wrapText: true, vertical: 'top' };
+    ws.getColumn('items').alignment = { wrapText: true, vertical: 'top' };
 
     // write and save
     const buf = await wb.xlsx.writeBuffer();
@@ -605,51 +849,7 @@ function switchView(name){
   else if(name==='detail'){ viewDetail.classList.remove('hidden'); }
 }
 
-/* SETTINGS (simplified view form) */
 function loadSettingsForm(){
-  viewSettings.innerHTML = `
-    <h2 class="text-xl font-bold mb-4">Pengaturan</h2>
-    <div class="mb-4">
-      <label class="text-sm">Judul Form</label>
-      <input id="settingFormTitle" class="mt-2 w-full px-3 py-2 border rounded" placeholder="Form Permintaan ATK">
-    </div>
-    <div class="mb-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-      <div>
-        <label class="text-sm">Tahun Anggaran</label>
-        <input id="settingBudgetYear" class="mt-2 w-full px-3 py-2 border rounded" placeholder="2025">
-      </div>
-      <div>
-        <label class="text-sm">Document Number Prefix (nomor awal)</label>
-        <input id="settingDocPrefix" class="mt-2 w-full px-3 py-2 border rounded" placeholder="0001">
-      </div>
-    </div>
-
-    <div class="mb-4">
-      <label class="text-sm">Document Number Format</label>
-      <input id="settingDocFormat" class="mt-2 w-full px-3 py-2 border rounded" placeholder="{AUTO}/ATK/{MM}/{YYYY}">
-      <p class="text-xs text-gray-500 mt-1">Preview: <span id="docFormatPreview" class="font-mono"></span></p>
-    </div>
-
-    <div class="mb-4">
-      <label class="text-sm">Nomor WhatsApp Notifikasi</label>
-      <input id="settingWhatsAppNumber" class="mt-2 w-full px-3 py-2 border rounded" placeholder="628123456789 (tanpa + atau spasi)">
-    </div>
-
-    <div class="mb-4">
-      <label class="text-sm">Nama Organisasi</label>
-      <input id="settingOrgName" class="mt-2 w-full px-3 py-2 border rounded" placeholder="BPS Kota Jakarta Selatan">
-    </div>
-    <div class="mb-4">
-      <label class="text-sm">Logo URL (opsional)</label>
-      <input id="settingLogoUrl" class="mt-2 w-full px-3 py-2 border rounded" placeholder="https://example.com/logo.png">
-    </div>
-    <div class="flex gap-3">
-      <button id="saveSettingsBtn" class="px-4 py-2 bg-green-600 text-white rounded">💾 Save Settings</button>
-      <button id="cancelSettingsBtn" class="px-4 py-2 bg-gray-500 text-white rounded">Cancel</button>
-    </div>
-  `;
-
-  // populate values
   document.getElementById('settingFormTitle').value = appSettings.form_title || '';
   document.getElementById('settingBudgetYear').value = appSettings.budget_year || '';
   document.getElementById('settingDocPrefix').value = appSettings.doc_prefix || '';
@@ -658,33 +858,7 @@ function loadSettingsForm(){
   document.getElementById('settingOrgName').value = appSettings.organization_name || '';
   document.getElementById('settingLogoUrl').value = appSettings.logo_url || '';
   buildDocFormatPreview();
-
-  document.getElementById('saveSettingsBtn').addEventListener('click', ()=> {
-    const f=document.getElementById('settingFormTitle').value.trim();
-    const y=document.getElementById('settingBudgetYear').value.trim();
-    const prefix=document.getElementById('settingDocPrefix').value.trim();
-    const format=document.getElementById('settingDocFormat').value.trim();
-    const wa=document.getElementById('settingWhatsAppNumber').value.trim();
-    const o=document.getElementById('settingOrgName').value.trim();
-    const logo=document.getElementById('settingLogoUrl').value.trim();
-    if(!f||!y||!o){ showToast('Mohon isi semua pengaturan utama', true); return; }
-    appSettings.form_title=f; appSettings.budget_year=y; appSettings.organization_name=o; appSettings.logo_url=logo;
-    appSettings.doc_prefix = prefix || appSettings.doc_prefix || '0001';
-    appSettings.doc_format = format || appSettings.doc_format || '{AUTO}/ATK/{MM}/{YYYY}';
-    appSettings.whatsapp_number = wa || '';
-    saveSettingsToStorage(); applySettingsToUI(); updateDocumentNumber(); showToast('Settings disimpan'); switchView('form');
-  });
-
-  document.getElementById('cancelSettingsBtn').addEventListener('click', ()=> switchView('form'));
-
-  document.getElementById('settingDocFormat').addEventListener('input', (e)=> {
-    const v = e.target.value.trim(); appSettings.doc_format = v; buildDocFormatPreview(); updateDocumentNumber();
-  });
-  document.getElementById('settingDocPrefix').addEventListener('input', (e)=> { appSettings.doc_prefix = e.target.value.trim(); buildDocFormatPreview(); updateDocumentNumber(); });
-  document.getElementById('settingLogoUrl').addEventListener('input', (e)=> { appSettings.logo_url = e.target.value.trim(); applySettingsToUI(); });
 }
-
-/* apply settings to UI */
 function applySettingsToUI(){
   document.getElementById('uiFormTitle').textContent = appSettings.form_title;
   document.getElementById('uiBudgetYear').textContent = 'Tahun Anggaran ' + appSettings.budget_year;
@@ -693,12 +867,15 @@ function applySettingsToUI(){
   filterYear.value = appSettings.budget_year;
   buildDocFormatPreview();
 
+  // --- logo handling with fallback on error ---
   const logoEl = document.getElementById('uiLogo');
   if(logoEl){
     if(appSettings.logo_url && appSettings.logo_url.trim() !== ''){
       logoEl.style.display = 'block';
       logoEl.src = appSettings.logo_url;
+      // jika gambar gagal dimuat, sembunyikan
       logoEl.onerror = function(){ console.warn('Logo failed to load:', appSettings.logo_url); this.style.display = 'none'; this.src = ''; };
+      // jika berhasil load, pastikan tampil
       logoEl.onload = function(){ this.style.display = 'block'; };
     } else {
       logoEl.onerror = null;
@@ -726,6 +903,23 @@ function init(){
   document.getElementById('reqSigSave').addEventListener('click', ()=> { const c=document.getElementById('requesterSignatureCanvas'); if(!requesterSigPad || requesterSigPad.isEmpty()){ showToast('Silakan buat tanda tangan pemohon terlebih dahulu', true); return; } c.dataset.dataurl = requesterSigPad.toDataURL(); showToast('Tanda tangan pemohon disimpan'); });
   document.getElementById('submitRequestBtn').addEventListener('click', submitRequest);
 
+  document.getElementById('saveSettingsBtn').addEventListener('click', ()=>{
+    const f=document.getElementById('settingFormTitle').value.trim();
+    const y=document.getElementById('settingBudgetYear').value.trim();
+    const prefix=document.getElementById('settingDocPrefix').value.trim();
+    const format=document.getElementById('settingDocFormat').value.trim();
+    const wa=document.getElementById('settingWhatsAppNumber').value.trim();
+    const o=document.getElementById('settingOrgName').value.trim();
+    const logo=document.getElementById('settingLogoUrl').value.trim();
+    if(!f||!y||!o){ showToast('Mohon isi semua pengaturan utama', true); return; }
+    appSettings.form_title=f; appSettings.budget_year=y; appSettings.organization_name=o; appSettings.logo_url=logo;
+    appSettings.doc_prefix = prefix || appSettings.doc_prefix || '0001';
+    appSettings.doc_format = format || appSettings.doc_format || '{AUTO}/ATK/{MM}/{YYYY}';
+    appSettings.whatsapp_number = wa || '';
+    saveSettingsToStorage(); applySettingsToUI(); updateDocumentNumber(); showToast('Settings disimpan'); switchView('form');
+  });
+  document.getElementById('cancelSettingsBtn').addEventListener('click', ()=> switchView('form'));
+
   document.getElementById('filterMonth').addEventListener('change', ()=> renderAllRequests());
   document.getElementById('filterYear').addEventListener('change', ()=> renderAllRequests());
 
@@ -741,17 +935,34 @@ function init(){
     exportRequestsToExcelWithImages(filtered, `requests_${month||'all'}_${year||'all'}.xlsx`);
   });
 
+  // guard for optional btnExportAll (in case not present)
   const btnExportAll = document.getElementById('btnExportAll');
   if(btnExportAll) btnExportAll.addEventListener('click', ()=> exportRequestsToExcelWithImages(currentRequests.filter(r=>r.recordType==='request'), `requests_all.xlsx`));
 
+  // live preview of format in settings
+  document.getElementById('settingDocFormat').addEventListener('input', (e)=> {
+    const v = e.target.value.trim(); appSettings.doc_format = v; buildDocFormatPreview(); updateDocumentNumber();
+  });
+  document.getElementById('settingDocPrefix').addEventListener('input', (e)=> { appSettings.doc_prefix = e.target.value.trim(); buildDocFormatPreview(); updateDocumentNumber(); });
+
+  // live preview of logo url while typing in settings
+  document.getElementById('settingLogoUrl').addEventListener('input', (e)=> {
+    appSettings.logo_url = e.target.value.trim(); applySettingsToUI();
+  });
+
+  // update number when submission date or year changes
   document.getElementById('submissionDate').addEventListener('change', updateDocumentNumber);
   document.getElementById('yearSelect').addEventListener('change', updateDocumentNumber);
 
   applySettingsToUI(); updateDocumentNumber(); renderAllRequests(); renderVerifierDashboard(); renderSupervisorDashboard();
 }
 
+init(); switchView('form');
 
 /* expose for html onclick */
 window.viewRequestDetail = viewRequestDetail;
 window.deleteRequest = deleteRequest;
 window.openWhatsAppFor = openWhatsAppFor;
+</script>
+</body>
+</html>
