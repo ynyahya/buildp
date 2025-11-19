@@ -1,24 +1,169 @@
-<!-- Tailwind -->
-<script src="https://cdn.tailwindcss.com"></script>
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Form Permintaan ATK - BPS</title>
 
-<!-- Signature Pad -->
-<script src="https://cdn.jsdelivr.net/npm/signature_pad@4.0.0/dist/signature_pad.umd.min.js"></script>
+  <!-- Tailwind (must be before app scripts) -->
+  <script src="https://cdn.tailwindcss.com"></script>
 
-<!-- Excel Export -->
-<script src="https://cdn.jsdelivr.net/npm/exceljs/dist/exceljs.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js"></script>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="bg-gray-50 min-h-screen text-gray-800">
+  <div id="app" class="max-w-6xl mx-auto p-6">
+    <!-- Top menu -->
+    <div class="no-print mb-6">
+      <div class="flex flex-wrap items-center gap-3 justify-center sm:justify-start">
+        <button id="btnNew" class="w-full sm:w-auto px-4 py-2 bg-blue-600 text-white rounded shadow-sm">📝 Permintaan Baru</button>
+        <button id="btnAll" class="w-full sm:w-auto px-4 py-2 bg-gray-700 text-white rounded shadow-sm">📋 Semua Permintaan</button>
+        <button id="btnVerifier" class="w-full sm:w-auto px-4 py-2 bg-orange-600 text-white rounded shadow-sm">✅ Verifikator</button>
+        <button id="btnSupervisor" class="w-full sm:w-auto px-4 py-2 bg-purple-600 text-white rounded shadow-sm">👔 Penanggung Jawab</button>
+        <button id="btnSettings" class="w-full sm:w-auto px-4 py-2 bg-gray-800 text-white rounded shadow-sm">⚙️ Pengaturan</button>
+      </div>
+    </div>
 
-<!-- Main App -->
-<script src="app.js"></script>
+    <!-- Form view -->
+    <div id="viewForm" class="bg-white rounded shadow p-6 print-section">
+      <div class="text-center mb-6">
+        <div id="logoContainer" class="mb-3">
+          <img id="uiLogo" src="" alt="Logo" class="mx-auto" style="width:96px; height:auto; object-fit:contain; display:none;">
+        </div>
+        <h1 id="uiFormTitle" class="text-2xl font-bold">Form Permintaan ATK</h1>
+        <p id="uiBudgetYear" class="text-sm text-gray-600">Tahun Anggaran 2025</p>
+        <p id="uiOrg" class="text-sm text-gray-500">BPS Kota Jakarta Selatan</p>
+      </div>
 
-<!-- INIT after DOM READY -->
-<script>
-document.addEventListener("DOMContentLoaded", () => {
-    if (typeof init === "function") {
-        init();
-        switchView('form');
-    } else {
-        console.error("init() not found — app.js did not load");
-    }
-});
-</script>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+        <div>
+          <label class="text-sm font-semibold">No Dokumen</label>
+          <input id="documentNumber" readonly class="mt-2 w-full px-3 py-2 border rounded bg-gray-100">
+        </div>
+        <div>
+          <label class="text-sm font-semibold">Tahun</label>
+          <select id="yearSelect" class="mt-2 w-full border rounded px-3 py-2"></select>
+        </div>
+        <div>
+          <label class="text-sm font-semibold">Bagian/Fungsi</label>
+          <select id="workUnitSelect" class="mt-2 w-full border rounded px-3 py-2">
+            <option value="">Pilih Bagian/Fungsi</option>
+            <option>Subbagian Umum</option><option>Sosial</option><option>Produksi</option><option>Distribusi</option><option>Nerwilis</option><option>IPDS</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="mb-4">
+        <div class="flex justify-between items-center mb-2">
+          <h2 class="font-bold text-lg">Rincian ATK</h2>
+          <button id="btnAddItem" class="px-3 py-2 bg-green-600 text-white rounded">+ Tambah Item</button>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full border-collapse">
+            <thead>
+              <tr class="bg-gray-100">
+                <th class="p-3 border">No</th><th class="p-3 border">Nama Item</th><th class="p-3 border w-28">Jumlah</th><th class="p-3 border">Satuan</th><th class="p-3 border">Aksi</th>
+              </tr>
+            </thead>
+            <tbody id="itemsTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+        <div><label class="text-sm font-semibold">Lokasi Pengajuan</label><input id="submissionLocation" value="Jakarta" class="mt-2 w-full px-3 py-2 border rounded"></div>
+        <div><label class="text-sm font-semibold">Tanggal Pengajuan</label><input id="submissionDate" type="date" class="mt-2 w-full px-3 py-2 border rounded"></div>
+      </div>
+
+      <div class="mb-6">
+        <h2 class="text-lg font-bold mb-2">Informasi Pemohon</h2>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div><label class="text-sm">Nama *</label><input id="requesterName" class="mt-2 w-full px-3 py-2 border rounded" placeholder="Nama pemohon"></div>
+          <div><label class="text-sm">NIP *</label><input id="requesterNIP" class="mt-2 w-full px-3 py-2 border rounded" placeholder="contoh: 199012345678901234"></div>
+        </div>
+
+        <div class="mt-4 p-3 bg-blue-50 border rounded">
+          <div class="flex flex-col md:flex-row items-start gap-3">
+            <div class="flex-1">
+              <p class="text-sm font-semibold mb-1">Tanda Tangan Digital (Pemohon)</p>
+              <div class="signature-card w-full">
+                <canvas id="requesterSignatureCanvas" class="signature-canvas"></canvas>
+                <div class="flex gap-2 mt-2">
+                  <button id="reqSigClear" class="px-3 py-1 bg-red-500 text-white rounded">Clear</button>
+                  <button id="reqSigSave" class="px-3 py-1 bg-green-600 text-white rounded">Save Signature</button>
+                </div>
+              </div>
+              <p class="text-xs text-gray-600 mt-2">ℹ️ Petunjuk: Tanda tangan gunakan mouse atau sentuh. Setelah disimpan, tanda tangan akan tercantum pada dokumen.</p>
+            </div>
+
+            <div class="w-full md:w-80 text-sm text-gray-700">
+              <p class="mb-1"><strong>Tips:</strong></p>
+              <ul class="text-xs list-disc ml-4">
+                <li>Gunakan mouse atau jari (mobile)</li>
+                <li>Tekan <em>Save Signature</em> untuk menyimpan</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="mt-6">
+        <button id="submitRequestBtn" class="w-full px-6 py-3 bg-blue-600 text-white rounded text-lg font-bold">Kirim Permintaan</button>
+      </div>
+    </div>
+
+    <!-- All requests -->
+    <div id="viewAll" class="hidden bg-white rounded shadow p-6">
+      <div class="flex items-center gap-4 mb-4">
+        <h2 class="text-xl font-bold">Semua Permintaan ATK</h2>
+        <div class="ml-auto flex items-center gap-2">
+          <label class="text-sm">Filter Bulan</label>
+          <select id="filterMonth" class="border rounded px-2 py-1">
+            <option value="">Semua</option>
+            <option value="01">Jan</option><option value="02">Feb</option><option value="03">Mar</option>
+            <option value="04">Apr</option><option value="05">Mei</option><option value="06">Jun</option>
+            <option value="07">Jul</option><option value="08">Agu</option><option value="09">Sep</option>
+            <option value="10">Okt</option><option value="11">Nov</option><option value="12">Des</option>
+          </select>
+          <label class="text-sm">Tahun</label>
+          <select id="filterYear" class="border rounded px-2 py-1"></select>
+          <button id="btnExportFiltered" class="ml-2 px-3 py-1 bg-indigo-700 text-white rounded">Export Filtered</button>
+        </div>
+      </div>
+      <div id="allRequestsList" class="space-y-4"></div>
+    </div>
+
+    <div id="viewVerifier" class="hidden bg-white rounded shadow p-6"></div>
+    <div id="viewSupervisor" class="hidden bg-white rounded shadow p-6"></div>
+    <div id="viewDetail" class="hidden bg-white rounded shadow p-6 print-section"></div>
+    <div id="viewSettings" class="hidden bg-white rounded shadow p-6"></div>
+  </div>
+
+  <div id="toastContainer"></div>
+
+  <!-- External libs (must load before app.js) -->
+  <script src="https://cdn.jsdelivr.net/npm/signature_pad@4.0.0/dist/signature_pad.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/exceljs/dist/exceljs.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js"></script>
+
+  <!-- Main app script -->
+  <script src="app.js"></script>
+
+  <!-- Init after DOM ready -->
+  <script>
+    document.addEventListener("DOMContentLoaded", function() {
+      if (typeof init === "function") {
+        try {
+          init();
+          if (typeof switchView === "function") switchView('form');
+        } catch (e) {
+          console.error('init() execution error:', e);
+          alert('init() execution error — lihat console untuk detail');
+        }
+      } else {
+        console.error("init() not found — app.js may have failed to load or contains errors.");
+        alert('init() not found — cek console (F12) untuk error');
+      }
+    });
+  </script>
+</body>
+</html>
