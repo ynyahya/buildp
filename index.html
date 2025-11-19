@@ -176,7 +176,7 @@
       <div class="mb-4">
         <label class="text-sm">Nomor WhatsApp Notifikasi</label>
         <input id="settingWhatsAppNumber" class="mt-2 w-full px-3 py-2 border rounded" placeholder="628123456789 (tanpa + atau spasi)">
-        <p class="text-xs text-gray-500 mt-1">Nomor untuk tombol "Reminder". Jika kosong, pesan akan disalin ke clipboard.</p>
+        <p class="text-xs text-gray-500 mt-1">Nomor untuk tombol "Buka WA". Jika kosong, pesan akan disalin ke clipboard.</p>
       </div>
 
       <div class="mb-4">
@@ -305,158 +305,49 @@ function initRequestSignature(){ const canvas=document.getElementById('requester
 /* rendering helpers */
 function getStatusColorClass(status){ switch(status){ case 'Pending Verification': return 'bg-yellow-200 text-yellow-800'; case 'Verified - Pending Approval': return 'bg-blue-200 text-blue-800'; case 'Fully Approved': return 'bg-green-200 text-green-800'; case 'Rejected by Verifier': case 'Rejected by Supervisor': return 'bg-red-200 text-red-800'; default: return 'bg-gray-200 text-gray-800'; } }
 
-/* NEW: robust card-click renderAllRequests with Buka Form + Reminder */
 function renderAllRequests(){
-  const container = document.getElementById('allRequestsList');
-  const monthFilter = document.getElementById('filterMonth').value;
-  const yearFilterVal = document.getElementById('filterYear').value;
-
-  const list = currentRequests
-    .filter(r => r.recordType === 'request')
-    .filter(r => {
-      if(!monthFilter && !yearFilterVal) return true;
-      const parts = (r.documentNumber||'').split('/');
-      const m = parts[2]||''; const y = parts[3]||'';
-      if(monthFilter && yearFilterVal) return m===monthFilter && y===yearFilterVal;
-      if(monthFilter) return m===monthFilter;
-      if(yearFilterVal) return y===yearFilterVal;
-      return true;
-    })
-    .sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt));
-
-  container.innerHTML = '';
-  if(list.length === 0){
-    container.innerHTML = '<p class="text-gray-500 py-8 text-center">Belum ada permintaan</p>';
-    return;
-  }
-
-  list.forEach(r => {
-    const card = document.createElement('div');
-    card.className = 'border rounded p-4 shadow-sm flex justify-between items-start';
-    // make whole card clickable
-    card.addEventListener('click', () => viewRequestDetail(r.__id));
-    card.style.cursor = 'pointer';
-
-    // left area (info)
-    const left = document.createElement('div');
-    left.style.minWidth = '0';
-    left.style.flex = '1';
-
-    const h3 = document.createElement('h3');
-    h3.className = 'font-bold';
-    h3.textContent = r.documentNumber || '-';
-
-    const p1 = document.createElement('p');
-    p1.className = 'text-sm text-gray-600';
-    p1.textContent = `${r.workUnit || '-'} - ${r.year || '-'}`;
-
-    const p2 = document.createElement('p');
-    p2.className = 'text-sm text-gray-600 mt-2';
-    p2.innerHTML = `<strong>Requester:</strong> ${escapeHtml(r.requesterName)} (${escapeHtml(r.requesterNIP)})`;
-
-    const p3 = document.createElement('p');
-    p3.className = 'text-sm text-gray-600';
-    p3.innerHTML = `<strong>Date:</strong> ${formatDate(r.submissionDate)}`;
-
-    left.appendChild(h3);
-    left.appendChild(p1);
-    left.appendChild(p2);
-    left.appendChild(p3);
-
-    // right actions (these must stop propagation)
-    const right = document.createElement('div');
-    right.className = 'flex items-center gap-2 no-print';
-    right.style.marginLeft = '12px';
-
-    // new: Buka Form (opens detail)
-    const openFormBtn = document.createElement('button');
-    openFormBtn.className = 'px-3 py-1 bg-gray-400 text-white rounded';
-    openFormBtn.textContent = '📄 Buka Form';
-    openFormBtn.addEventListener('click', (ev) => { ev.stopPropagation(); viewRequestDetail(r.__id); });
-
-    const statusBadge = document.createElement('span');
-    statusBadge.className = `px-3 py-1 rounded-full text-sm ${getStatusColorClass(r.status)}`;
-    statusBadge.textContent = r.status || '-';
-    statusBadge.addEventListener('click', (ev) => ev.stopPropagation());
-
-    // renamed WA -> Reminder
-    const waBtn = document.createElement('button');
-    waBtn.className = 'px-3 py-1 bg-green-500 text-white rounded';
-    waBtn.textContent = 'Reminder';
-    waBtn.addEventListener('click', (ev) => { ev.stopPropagation(); openWhatsAppFor(r.__id); });
-
-    const delBtn = document.createElement('button');
-    delBtn.className = 'px-3 py-1 bg-red-500 text-white rounded';
-    delBtn.textContent = '🗑️ Hapus';
-    delBtn.addEventListener('click', (ev) => { ev.stopPropagation(); deleteRequest(r.__id, ev); });
-
-    right.appendChild(openFormBtn);
-    right.appendChild(statusBadge);
-    right.appendChild(waBtn);
-    right.appendChild(delBtn);
-
-    card.appendChild(left);
-    card.appendChild(right);
-    container.appendChild(card);
-  });
+  const container=document.getElementById('allRequestsList');
+  const monthFilter=document.getElementById('filterMonth').value;
+  const yearFilterVal=document.getElementById('filterYear').value;
+  const list=currentRequests.filter(r=>r.recordType==='request').filter(r=>{
+    if(!monthFilter && !yearFilterVal) return true;
+    const parts=(r.documentNumber||'').split('/');
+    const m=parts[2]||''; const y=parts[3]||'';
+    if(monthFilter && yearFilterVal) return m===monthFilter && y===yearFilterVal;
+    if(monthFilter) return m===monthFilter;
+    if(yearFilterVal) return y===yearFilterVal;
+    return true;
+  }).sort((a,b)=> new Date(b.createdAt)-new Date(a.createdAt));
+  if(list.length===0){ container.innerHTML='<p class="text-gray-500 py-8 text-center">Belum ada permintaan</p>'; return; }
+  container.innerHTML = list.map(r=>{
+    const statusBadge = `<span class="px-3 py-1 rounded-full text-sm ${getStatusColorClass(r.status)}">${escapeHtml(r.status)}</span>`;
+    return `<div class="border rounded p-4 shadow-sm flex justify-between items-start">
+      <div onclick="viewRequestDetail('${r.__id}')" class="cursor-pointer">
+        <h3 class="font-bold">${escapeHtml(r.documentNumber)}</h3>
+        <p class="text-sm text-gray-600">${escapeHtml(r.workUnit)} - ${escapeHtml(r.year)}</p>
+        <p class="text-sm text-gray-600 mt-2"><strong>Requester:</strong> ${escapeHtml(r.requesterName)} (${escapeHtml(r.requesterNIP)})</p>
+        <p class="text-sm text-gray-600"><strong>Date:</strong> ${formatDate(r.submissionDate)}</p>
+      </div>
+      <div class="flex items-center gap-2">
+        ${statusBadge}
+        <button onclick="openWhatsAppFor('${r.__id}')" class="px-3 py-1 bg-green-500 text-white rounded">📱 Buka WA</button>
+        <button onclick="deleteRequest('${r.__id}', event)" class="px-3 py-1 bg-red-500 text-white rounded">🗑️ Hapus</button>
+      </div>
+    </div>`; }).join('');
 }
 
-/* programmatic verifier dashboard */
 function renderVerifierDashboard(){
-  const container = document.getElementById('verifierRequestsList');
+  const container=document.getElementById('verifierRequestsList');
   const pending = currentRequests.filter(r=>r.recordType==='request' && r.status==='Pending Verification').sort((a,b)=> new Date(b.createdAt)-new Date(a.createdAt));
-  container.innerHTML = '';
   if(pending.length===0){ container.innerHTML='<p class="text-gray-500 py-6 text-center">Tidak ada permintaan menunggu verifikasi</p>'; return; }
-
-  pending.forEach(r=>{
-    const card = document.createElement('div');
-    card.className = 'p-4 border rounded cursor-pointer hover:shadow-sm';
-    card.addEventListener('click', ()=> viewRequestDetail(r.__id));
-
-    const top = document.createElement('div');
-    top.className = 'flex justify-between';
-    const left = document.createElement('div');
-    const h = document.createElement('h3'); h.className='font-bold'; h.textContent = r.documentNumber;
-    const sub = document.createElement('p'); sub.className='text-sm text-gray-600'; sub.textContent = `${r.workUnit} - ${r.year}`;
-    left.appendChild(h); left.appendChild(sub);
-
-    const badge = document.createElement('span'); badge.className='px-3 py-1 rounded-full bg-yellow-200 text-yellow-800'; badge.textContent='Step 1: Pending Verification';
-    top.appendChild(left); top.appendChild(badge);
-
-    const footer = document.createElement('p'); footer.className='text-sm text-gray-700 mt-2'; footer.innerHTML = `<strong>Requester:</strong> ${escapeHtml(r.requesterName)} (${escapeHtml(r.requesterNIP)})`;
-
-    card.appendChild(top); card.appendChild(footer);
-    container.appendChild(card);
-  });
+  container.innerHTML = pending.map(r=>`<div class="p-4 border rounded cursor-pointer hover:shadow-sm" onclick="viewRequestDetail('${r.__id}')"><div class="flex justify-between"><div><h3 class="font-bold">${escapeHtml(r.documentNumber)}</h3><p class="text-sm text-gray-600">${escapeHtml(r.workUnit)} - ${escapeHtml(r.year)}</p></div><span class="px-3 py-1 rounded-full bg-yellow-200 text-yellow-800">Step 1: Pending Verification</span></div><p class="text-sm text-gray-700 mt-2"><strong>Requester:</strong> ${escapeHtml(r.requesterName)} (${escapeHtml(r.requesterNIP)})</p></div>`).join('');
 }
 
-/* programmatic supervisor dashboard */
 function renderSupervisorDashboard(){
-  const container = document.getElementById('supervisorRequestsList');
+  const container=document.getElementById('supervisorRequestsList');
   const pending = currentRequests.filter(r=>r.recordType==='request' && r.status==='Verified - Pending Approval').sort((a,b)=> new Date(b.updatedAt||b.createdAt)-new Date(a.updatedAt||a.createdAt));
-  container.innerHTML = '';
-  if(pending.length===0){ container.innerHTML='<p class="text-gray-500 py-6 text-center'>Tidak ada permintaan menunggu persetujuan akhir</p>'; return; }
-
-  pending.forEach(r=>{
-    const card = document.createElement('div');
-    card.className = 'p-4 border rounded cursor-pointer hover:shadow-sm';
-    card.addEventListener('click', ()=> viewRequestDetail(r.__id));
-
-    const top = document.createElement('div');
-    top.className = 'flex justify-between';
-    const left = document.createElement('div');
-    const h = document.createElement('h3'); h.className='font-bold'; h.textContent = r.documentNumber;
-    const sub = document.createElement('p'); sub.className='text-sm text-gray-600'; sub.textContent = `${r.workUnit} - ${r.year}`;
-    left.appendChild(h); left.appendChild(sub);
-
-    const badge = document.createElement('span'); badge.className='px-3 py-1 rounded-full bg-blue-200 text-blue-800'; badge.textContent='Step 2: Pending Final Approval';
-    top.appendChild(left); top.appendChild(badge);
-
-    const footer = document.createElement('p'); footer.className='text-sm text-gray-700 mt-2'; footer.innerHTML = `<strong>Requester:</strong> ${escapeHtml(r.requesterName)} (${escapeHtml(r.requesterNIP)})`;
-
-    card.appendChild(top); card.appendChild(footer);
-    container.appendChild(card);
-  });
+  if(pending.length===0){ container.innerHTML='<p class="text-gray-500 py-6 text-center">Tidak ada permintaan menunggu persetujuan akhir</p>'; return; }
+  container.innerHTML = pending.map(r=>`<div class="p-4 border rounded cursor-pointer hover:shadow-sm" onclick="viewRequestDetail('${r.__id}')"><div class="flex justify-between"><div><h3 class="font-bold">${escapeHtml(r.documentNumber)}</h3><p class="text-sm text-gray-600">${escapeHtml(r.workUnit)} - ${escapeHtml(r.year)}</p></div><span class="px-3 py-1 rounded-full bg-blue-200 text-blue-800">Step 2: Pending Final Approval</span></div><p class="text-sm text-gray-700 mt-2"><strong>Requester:</strong> ${escapeHtml(r.requesterName)} (${escapeHtml(r.requesterNIP)})</p></div>`).join('');
 }
 
 /* CRUD */
@@ -539,8 +430,6 @@ function openWhatsAppFor(id){
 function viewRequestDetail(id){
   const r = currentRequests.find(x => x.__id === id);
   if(!r) return;
-
-  // build the main detail HTML
   viewDetail.innerHTML = `
     <div class="no-print mb-4">
       <button id="backFromDetail" class="px-3 py-2 bg-gray-500 text-white rounded">← Back</button>
@@ -591,45 +480,12 @@ function viewRequestDetail(id){
       </div>
     </div>
 
-    <!-- VERIFICATION DISPLAY (ALWAYS VISIBLE) -->
-    <div class="border-t pt-6 mb-6">
-      <h3 class="font-bold mb-4">Verifikasi Section</h3>
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div>
-          <p class="text-sm font-semibold mb-2">Verifikator</p>
-          <div class="p-4 border rounded bg-white">
-            <p class="text-sm"><strong>Name:</strong> ${escapeHtml(r.verifierName||'-')}</p>
-            <p class="text-sm"><strong>NIP:</strong> ${escapeHtml(r.verifierNIP||'-')}</p>
-            <p class="text-sm"><strong>Date:</strong> ${escapeHtml(r.verificationDate? formatDate(r.verificationDate) : '-')}</p>
-            <div class="mt-3">
-              ${r.verifierSignature? `<img src="${r.verifierSignature}" style="max-width:100%;height:auto;border:1px solid #e5e7eb;padding:6px;border-radius:6px;background:white;">` : `<p class="text-xs text-gray-500">No signature saved</p>`}
-            </div>
-          </div>
-        </div>
-
-        <div>
-          <p class="text-sm font-semibold mb-2">Penanggung Jawab</p>
-          <div class="p-4 border rounded bg-white">
-            <p class="text-sm"><strong>Name:</strong> ${escapeHtml(r.supervisorName||'-')}</p>
-            <p class="text-sm"><strong>NIP:</strong> ${escapeHtml(r.supervisorNIP||'-')}</p>
-            <p class="text-sm"><strong>Date:</strong> ${escapeHtml(r.supervisorApprovalDate? formatDate(r.supervisorApprovalDate) : '-')}</p>
-            <div class="mt-3">
-              ${r.supervisorSignature? `<img src="${r.supervisorSignature}" style="max-width:100%;height:auto;border:1px solid #e5e7eb;padding:6px;border-radius:6px;background:white;">` : `<p class="text-xs text-gray-500">No signature saved</p>`}
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
     <div id="verifierSection"></div>
     <div id="supervisorSection"></div>
   `;
-
-  // back & print handlers
   document.getElementById('backFromDetail').addEventListener('click', ()=> switchView('all'));
   document.getElementById('btnPrint').addEventListener('click', ()=> window.print());
 
-  // interactive verifier / supervisor sections (unchanged)
   const verifierSection = document.getElementById('verifierSection');
   if(r.status === 'Pending Verification'){
     verifierSection.innerHTML = `
@@ -654,6 +510,7 @@ function viewRequestDetail(id){
           <button id="btnRejectVer" class="px-4 py-2 bg-red-600 text-white rounded">✗ Reject Request</button>
         </div>
       </div>`;
+    // init verifier canvas after DOM insertion
     setTimeout(()=> {
       const vCanvas = document.getElementById('verifierSignatureCanvas');
       if(vCanvas){
@@ -729,6 +586,7 @@ function viewRequestDetail(id){
       }
     }, 50);
   } else supSection.innerHTML='';
+  switchView('detail');
 }
 
 /* export CSV */
@@ -815,9 +673,7 @@ function init(){
       if(!month && !year) return true;
       const parts=(r.documentNumber||'').split('/'); const m=parts[2]||''; const y=parts[3]||'';
       if(month && year) return m===month && y===year;
-      if(month) return m===month;
-      if(year) return y===year;
-      return true;
+      if(month) return m===month; if(year) return y===year; return true;
     });
     exportRequestsToCSV(filtered, `requests_${month||'all'}_${year||'all'}.csv`);
   });
