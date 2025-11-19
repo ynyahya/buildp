@@ -430,6 +430,8 @@ function openWhatsAppFor(id){
 function viewRequestDetail(id){
   const r = currentRequests.find(x => x.__id === id);
   if(!r) return;
+
+  // build the main detail HTML
   viewDetail.innerHTML = `
     <div class="no-print mb-4">
       <button id="backFromDetail" class="px-3 py-2 bg-gray-500 text-white rounded">← Back</button>
@@ -480,12 +482,45 @@ function viewRequestDetail(id){
       </div>
     </div>
 
+    <!-- VERIFICATION DISPLAY (ALWAYS VISIBLE) -->
+    <div class="border-t pt-6 mb-6">
+      <h3 class="font-bold mb-4">Verifikasi Section</h3>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div>
+          <p class="text-sm font-semibold mb-2">Verifikator</p>
+          <div class="p-4 border rounded bg-white">
+            <p class="text-sm"><strong>Name:</strong> ${escapeHtml(r.verifierName||'-')}</p>
+            <p class="text-sm"><strong>NIP:</strong> ${escapeHtml(r.verifierNIP||'-')}</p>
+            <p class="text-sm"><strong>Date:</strong> ${escapeHtml(r.verificationDate? formatDate(r.verificationDate) : '-')}</p>
+            <div class="mt-3">
+              ${r.verifierSignature? `<img src="${r.verifierSignature}" style="max-width:100%;height:auto;border:1px solid #e5e7eb;padding:6px;border-radius:6px;background:white;">` : `<p class="text-xs text-gray-500">No signature saved</p>`}
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <p class="text-sm font-semibold mb-2">Penanggung Jawab</p>
+          <div class="p-4 border rounded bg-white">
+            <p class="text-sm"><strong>Name:</strong> ${escapeHtml(r.supervisorName||'-')}</p>
+            <p class="text-sm"><strong>NIP:</strong> ${escapeHtml(r.supervisorNIP||'-')}</p>
+            <p class="text-sm"><strong>Date:</strong> ${escapeHtml(r.supervisorApprovalDate? formatDate(r.supervisorApprovalDate) : '-')}</p>
+            <div class="mt-3">
+              ${r.supervisorSignature? `<img src="${r.supervisorSignature}" style="max-width:100%;height:auto;border:1px solid #e5e7eb;padding:6px;border-radius:6px;background:white;">` : `<p class="text-xs text-gray-500">No signature saved</p>`}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div id="verifierSection"></div>
     <div id="supervisorSection"></div>
   `;
+
+  // back & print handlers
   document.getElementById('backFromDetail').addEventListener('click', ()=> switchView('all'));
   document.getElementById('btnPrint').addEventListener('click', ()=> window.print());
 
+  // if still Pending Verification -> show interactive verifier form (same behavior as before)
   const verifierSection = document.getElementById('verifierSection');
   if(r.status === 'Pending Verification'){
     verifierSection.innerHTML = `
@@ -536,6 +571,7 @@ function viewRequestDetail(id){
     }, 50);
   } else verifierSection.innerHTML='';
 
+  // if Verified -> show supervisor interactive section (for final approval)
   const supSection=document.getElementById('supervisorSection');
   if(r.status === 'Verified - Pending Approval'){
     supSection.innerHTML = `
@@ -586,8 +622,8 @@ function viewRequestDetail(id){
       }
     }, 50);
   } else supSection.innerHTML='';
-  switchView('detail');
 }
+
 
 /* export CSV */
 function exportRequestsToCSV(filteredList, filename){
