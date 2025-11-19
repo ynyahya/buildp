@@ -176,7 +176,7 @@
       <div class="mb-4">
         <label class="text-sm">Nomor WhatsApp Notifikasi</label>
         <input id="settingWhatsAppNumber" class="mt-2 w-full px-3 py-2 border rounded" placeholder="628123456789 (tanpa + atau spasi)">
-        <p class="text-xs text-gray-500 mt-1">Nomor untuk tombol "Buka WA". Jika kosong, pesan akan disalin ke clipboard.</p>
+        <p class="text-xs text-gray-500 mt-1">Nomor untuk tombol "Reminder". Jika kosong, pesan akan disalin ke clipboard.</p>
       </div>
 
       <div class="mb-4">
@@ -305,7 +305,7 @@ function initRequestSignature(){ const canvas=document.getElementById('requester
 /* rendering helpers */
 function getStatusColorClass(status){ switch(status){ case 'Pending Verification': return 'bg-yellow-200 text-yellow-800'; case 'Verified - Pending Approval': return 'bg-blue-200 text-blue-800'; case 'Fully Approved': return 'bg-green-200 text-green-800'; case 'Rejected by Verifier': case 'Rejected by Supervisor': return 'bg-red-200 text-red-800'; default: return 'bg-gray-200 text-gray-800'; } }
 
-/* NEW: robust card-click renderAllRequests */
+/* NEW: robust card-click renderAllRequests with Buka Form + Reminder */
 function renderAllRequests(){
   const container = document.getElementById('allRequestsList');
   const monthFilter = document.getElementById('filterMonth').value;
@@ -368,14 +368,21 @@ function renderAllRequests(){
     right.className = 'flex items-center gap-2 no-print';
     right.style.marginLeft = '12px';
 
+    // new: Buka Form (opens detail)
+    const openFormBtn = document.createElement('button');
+    openFormBtn.className = 'px-3 py-1 bg-gray-400 text-white rounded';
+    openFormBtn.textContent = '📄 Buka Form';
+    openFormBtn.addEventListener('click', (ev) => { ev.stopPropagation(); viewRequestDetail(r.__id); });
+
     const statusBadge = document.createElement('span');
     statusBadge.className = `px-3 py-1 rounded-full text-sm ${getStatusColorClass(r.status)}`;
     statusBadge.textContent = r.status || '-';
     statusBadge.addEventListener('click', (ev) => ev.stopPropagation());
 
+    // renamed WA -> Reminder
     const waBtn = document.createElement('button');
     waBtn.className = 'px-3 py-1 bg-green-500 text-white rounded';
-    waBtn.textContent = '📱 Buka WA';
+    waBtn.textContent = 'Reminder';
     waBtn.addEventListener('click', (ev) => { ev.stopPropagation(); openWhatsAppFor(r.__id); });
 
     const delBtn = document.createElement('button');
@@ -383,6 +390,7 @@ function renderAllRequests(){
     delBtn.textContent = '🗑️ Hapus';
     delBtn.addEventListener('click', (ev) => { ev.stopPropagation(); deleteRequest(r.__id, ev); });
 
+    right.appendChild(openFormBtn);
     right.appendChild(statusBadge);
     right.appendChild(waBtn);
     right.appendChild(delBtn);
@@ -427,7 +435,7 @@ function renderSupervisorDashboard(){
   const container = document.getElementById('supervisorRequestsList');
   const pending = currentRequests.filter(r=>r.recordType==='request' && r.status==='Verified - Pending Approval').sort((a,b)=> new Date(b.updatedAt||b.createdAt)-new Date(a.updatedAt||a.createdAt));
   container.innerHTML = '';
-  if(pending.length===0){ container.innerHTML='<p class="text-gray-500 py-6 text-center">Tidak ada permintaan menunggu persetujuan akhir</p>'; return; }
+  if(pending.length===0){ container.innerHTML='<p class="text-gray-500 py-6 text-center'>Tidak ada permintaan menunggu persetujuan akhir</p>'; return; }
 
   pending.forEach(r=>{
     const card = document.createElement('div');
@@ -621,7 +629,7 @@ function viewRequestDetail(id){
   document.getElementById('backFromDetail').addEventListener('click', ()=> switchView('all'));
   document.getElementById('btnPrint').addEventListener('click', ()=> window.print());
 
-  // if still Pending Verification -> show interactive verifier form (same behavior as before)
+  // interactive verifier / supervisor sections (unchanged)
   const verifierSection = document.getElementById('verifierSection');
   if(r.status === 'Pending Verification'){
     verifierSection.innerHTML = `
@@ -646,7 +654,6 @@ function viewRequestDetail(id){
           <button id="btnRejectVer" class="px-4 py-2 bg-red-600 text-white rounded">✗ Reject Request</button>
         </div>
       </div>`;
-    // init verifier canvas after DOM insertion
     setTimeout(()=> {
       const vCanvas = document.getElementById('verifierSignatureCanvas');
       if(vCanvas){
@@ -672,7 +679,6 @@ function viewRequestDetail(id){
     }, 50);
   } else verifierSection.innerHTML='';
 
-  // if Verified -> show supervisor interactive section (for final approval)
   const supSection=document.getElementById('supervisorSection');
   if(r.status === 'Verified - Pending Approval'){
     supSection.innerHTML = `
