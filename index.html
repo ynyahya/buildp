@@ -101,24 +101,32 @@
           <div><label class="text-sm">NIP *</label><input id="requesterNIP" class="mt-2 w-full px-3 py-2 border rounded" placeholder="contoh: 199012345678901234"></div>
         </div>
 
-        <div class="mt-4 p-3 bg-blue-50 border rounded">
-          <div class="flex items-start gap-3">
-            <div class="w-1/2">
-              <p class="text-sm font-semibold mb-1">Tanda Tangan Digital (Pemohon)</p>
-              <div class="signature-card">
-                <canvas id="requesterSignatureCanvas" class="signature-canvas"></canvas>
-                <div class="flex gap-2 mt-2">
-                  <button id="reqSigClear" class="px-3 py-1 bg-red-500 text-white rounded">Clear</button>
-                  <button id="reqSigSave" class="px-3 py-1 bg-green-600 text-white rounded">Save Signature</button>
-                </div>
-              </div>
-              <p class="text-xs text-gray-600 mt-2">ℹ️ Petunjuk: Tanda tangan gunakan mouse atau sentuh. Setelah disimpan, tanda tangan akan tercantum pada dokumen.</p>
-            </div>
-            <div class="flex-1 text-sm text-gray-700">
-              <!-- tambahan instruksi jika perlu -->
-            </div>
-          </div>
+       <div class="mt-4 p-3 bg-blue-50 border rounded">
+  <div class="flex flex-col md:flex-row items-start gap-3">
+    <!-- ubah dari w-1/2 ke flex-1 agar mengisi sisa ruang -->
+    <div class="flex-1">
+      <p class="text-sm font-semibold mb-1">Tanda Tangan Digital (Pemohon)</p>
+      <div class="signature-card w-full">
+        <canvas id="requesterSignatureCanvas" class="signature-canvas"></canvas>
+        <div class="flex gap-2 mt-2">
+          <button id="reqSigClear" class="px-3 py-1 bg-red-500 text-white rounded">Clear</button>
+          <button id="reqSigSave" class="px-3 py-1 bg-green-600 text-white rounded">Save Signature</button>
         </div>
+      </div>
+      <p class="text-xs text-gray-600 mt-2">ℹ️ Petunjuk: Tanda tangan gunakan mouse atau sentuh. Setelah disimpan, tanda tangan akan tercantum pada dokumen.</p>
+    </div>
+
+    <!-- penjelasan / helper tetap ada, tapi posisinya di kanan pada layar besar -->
+    <div class="w-full md:w-80 text-sm text-gray-700">
+      <!-- tambahan instruksi jika perlu -->
+      <p class="mb-1"><strong>Tips:</strong></p>
+      <ul class="text-xs list-disc ml-4">
+        <li>Gunakan mouse atau jari (mobile)</li>
+        <li>Tekan <em>Save Signature</em> untuk menyimpan</li>
+      </ul>
+    </div>
+  </div>
+</div>
 
       </div>
 
