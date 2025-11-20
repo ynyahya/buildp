@@ -55,4 +55,4 @@ Jika ingin memecah JavaScript menjadi modul terpisah:
 - app.js (main application)
 
 ---
-Dikembangkan untuk BPS (Badan Pusat Statistik)
+
